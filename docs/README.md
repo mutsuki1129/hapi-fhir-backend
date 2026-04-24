@@ -6,6 +6,7 @@ This folder holds backend-facing documentation for the Phase 1 baseline and hard
 
 - `repo-baseline.md`: repository inventory, files that should be committed, and files that should stay local.
 - `phase1-frontend-error-smoke-test.md`: facade error contract, timeout/network behavior, and smoke-test data for frontend hardening.
+- `phase1-temperature-case-repro.md`: minimal repro steps for importing a Phase 1 patient + body-temperature case.
 
 ## Root-Level Contract Docs
 
