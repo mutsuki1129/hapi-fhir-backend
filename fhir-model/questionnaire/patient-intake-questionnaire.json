@@ -1,0 +1,140 @@
+{
+  "resourceType": "Questionnaire",
+  "id": "patient-intake-questionnaire",
+  "url": "https://example.org/fhir/Questionnaire/patient-intake-questionnaire",
+  "version": "0.1.0",
+  "name": "PatientIntakeQuestionnaire",
+  "title": "Patient Intake Questionnaire",
+  "status": "active",
+  "subjectType": [
+    "Patient"
+  ],
+  "item": [
+    {
+      "linkId": "name",
+      "text": "Patient name",
+      "type": "string",
+      "required": true
+    },
+    {
+      "linkId": "gender",
+      "text": "Gender",
+      "type": "choice",
+      "required": true,
+      "answerOption": [
+        {
+          "valueCoding": {
+            "code": "male",
+            "display": "Male"
+          }
+        },
+        {
+          "valueCoding": {
+            "code": "female",
+            "display": "Female"
+          }
+        },
+        {
+          "valueCoding": {
+            "code": "other",
+            "display": "Other"
+          }
+        },
+        {
+          "valueCoding": {
+            "code": "unknown",
+            "display": "Unknown"
+          }
+        }
+      ]
+    },
+    {
+      "linkId": "birthDate",
+      "text": "Birth date",
+      "type": "date"
+    },
+    {
+      "linkId": "education",
+      "text": "Education level",
+      "type": "string"
+    },
+    {
+      "linkId": "occupation",
+      "text": "Occupation",
+      "type": "string"
+    },
+    {
+      "linkId": "monthlyIncome",
+      "text": "Monthly income (TWD)",
+      "type": "integer"
+    },
+    {
+      "linkId": "monthlyExpense",
+      "text": "Monthly expense (TWD)",
+      "type": "integer"
+    },
+    {
+      "linkId": "hobby",
+      "text": "Hobby and interest",
+      "type": "text"
+    },
+    {
+      "linkId": "psychologicalTraits",
+      "text": "Psychological traits",
+      "type": "text"
+    },
+    {
+      "linkId": "behaviorPattern",
+      "text": "Behavior pattern",
+      "type": "text"
+    },
+    {
+      "linkId": "biomarker",
+      "text": "Biomarker (repeatable)",
+      "type": "group",
+      "repeats": true,
+      "item": [
+        {
+          "linkId": "biomarkerName",
+          "text": "Name",
+          "type": "string",
+          "required": true
+        },
+        {
+          "linkId": "biomarkerValue",
+          "text": "Value",
+          "type": "decimal",
+          "required": true
+        },
+        {
+          "linkId": "biomarkerUnit",
+          "text": "Unit",
+          "type": "string"
+        }
+      ]
+    },
+    {
+      "linkId": "doctor",
+      "text": "Attending physician",
+      "type": "string"
+    },
+    {
+      "linkId": "nationalId",
+      "text": "National ID",
+      "type": "string",
+      "required": true
+    },
+    {
+      "linkId": "nhiCardNo",
+      "text": "NHI card number",
+      "type": "string",
+      "required": true
+    },
+    {
+      "linkId": "futureCustom",
+      "text": "Future custom field",
+      "type": "text",
+      "repeats": true
+    }
+  ]
+}

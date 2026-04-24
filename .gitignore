@@ -1,0 +1,26 @@
+# Local environment
+.env
+*.local
+
+# Python runtime/cache
+__pycache__/
+*.py[cod]
+.python-version
+
+# Logs and transient server output
+*.log
+ui-server.out.log
+ui-server.err.log
+
+# Temporary/local artifacts
+tmp/
+.tmp/
+*.tmp
+*.bak
+hapi-main.war
+
+# Local tooling/editor state
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db

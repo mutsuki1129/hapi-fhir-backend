@@ -1,0 +1,35 @@
+{
+  "patient": {
+    "id": "patient-002",
+    "family": "Lin",
+    "given": "ChiaHao",
+    "gender": "male",
+    "birthDate": "1992-10-08",
+    "nationalId": "B123456789",
+    "nhiCardNo": "NHI99887766"
+  },
+  "doctor": {
+    "id": "practitioner-002",
+    "family": "Huang",
+    "given": "MeiLing"
+  },
+  "intake": {
+    "educationLevel": "Master",
+    "occupation": "Product Manager",
+    "monthlyIncome": 95000,
+    "monthlyExpense": 52000,
+    "hobby": "Reading, hiking, photography",
+    "psychologicalTraits": "Detail-oriented, empathetic, resilient",
+    "behaviorPattern": "Regular sleep, daily exercise, low sugar diet"
+  },
+  "biomarker": {
+    "code": "4548-4",
+    "display": "Hemoglobin A1c/Hemoglobin.total in Blood",
+    "value": 6.1,
+    "unit": "%"
+  },
+  "extraAttributes": {
+    "incomeSource": "Salary + freelance",
+    "livingStatus": "Lives with family"
+  }
+}

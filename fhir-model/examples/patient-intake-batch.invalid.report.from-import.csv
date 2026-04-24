@@ -1,0 +1,7 @@
+﻿"row","patient_id","field","severity","message"
+"1","bad1","gender","error","gender must be one of: male, female, other, unknown."
+"1","bad1","birth_date","error","birth_date cannot be in the future."
+"1","bad1","national_id","error","national_id must match pattern ^[A-Z][0-9]{9}$."
+"1","bad1","doctor_id","warning","doctor_id is empty; importer will generate a fallback ID."
+"1","bad1","monthly_income","error","monthly_income must be numeric."
+"1","bad1","biomarker","error","biomarker_code and biomarker_value must be provided together."

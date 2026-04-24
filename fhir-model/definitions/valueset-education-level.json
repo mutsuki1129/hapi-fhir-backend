@@ -1,0 +1,29 @@
+{
+  "resourceType": "ValueSet",
+  "id": "education-level-vs",
+  "url": "https://example.org/fhir/ValueSet/education-level",
+  "version": "0.1.0",
+  "name": "EducationLevelValueSet",
+  "title": "Education Level ValueSet",
+  "status": "active",
+  "experimental": true,
+  "date": "2026-04-23",
+  "publisher": "FHIR Server MVP",
+  "description": "Allowed code list for education level during intake.",
+  "compose": {
+    "include": [
+      {
+        "system": "https://example.org/fhir/CodeSystem/patient-intake",
+        "concept": [
+          { "code": "education-elementary", "display": "Elementary school" },
+          { "code": "education-junior-high", "display": "Junior high school" },
+          { "code": "education-high-school", "display": "High school" },
+          { "code": "education-bachelor", "display": "Bachelor" },
+          { "code": "education-master", "display": "Master" },
+          { "code": "education-phd", "display": "Doctorate" },
+          { "code": "education-other", "display": "Other" }
+        ]
+      }
+    ]
+  }
+}

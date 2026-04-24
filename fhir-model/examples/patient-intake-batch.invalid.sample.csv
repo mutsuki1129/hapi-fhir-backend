@@ -1,0 +1,3 @@
+patient_id,family,given,gender,birth_date,national_id,nhi_card_no,doctor_id,doctor_family,doctor_given,education_level,occupation,monthly_income,monthly_expense,hobby,psychological_traits,behavior_pattern,biomarker_code,biomarker_display,biomarker_value,biomarker_unit,extra_income_source,extra_living_status
+bad1,Chan,Mei,invalid,2035-01-01,ZZZ,NHI0000,,Wu,An,Master,PM,abc,20000,Reading,Stable,Normal,4548-4,Hemoglobin A1c/Hemoglobin.total in Blood,,%,Salary,Lives with parents
+patient-202,Ho,Yi,male,1995-11-02,E123456789,NHI77778888,practitioner-202,Tsai,Wen,Bachelor,Nurse,55000,30000,Music,Optimistic,Regular,4548-4,Hemoglobin A1c/Hemoglobin.total in Blood,5.7,%,Salary,Lives alone

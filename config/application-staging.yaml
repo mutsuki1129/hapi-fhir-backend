@@ -1,0 +1,9 @@
+spring:
+  jpa:
+    hibernate:
+      ddl-auto: validate
+
+logging:
+  level:
+    ca.uhn.fhir: INFO
+    org.springframework.security: WARN

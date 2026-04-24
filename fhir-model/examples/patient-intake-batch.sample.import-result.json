@@ -1,0 +1,32 @@
+{
+    "generatedAt":  "2026-04-23T10:09:53.4514047+08:00",
+    "mode":  "dev",
+    "csvFile":  ".\\fhir-model\\examples\\patient-intake-batch.sample.csv",
+    "baseUrl":  "http://localhost:8091",
+    "validateOnly":  false,
+    "validationSummary":  {
+                              "errors":  0,
+                              "warnings":  0,
+                              "report":  "C:\\Users\\clamp\\AppData\\Local\\Temp\\patient-intake-validation-8c4ded6f-9e4d-4ca3-a87d-d9d0ee443568.csv"
+                          },
+    "importSummary":  {
+                          "totalRows":  2,
+                          "success":  2,
+                          "skipped":  0,
+                          "failed":  0
+                      },
+    "results":  [
+                    {
+                        "row":  1,
+                        "patientId":  "patient-101",
+                        "status":  "success",
+                        "error":  ""
+                    },
+                    {
+                        "row":  2,
+                        "patientId":  "patient-102",
+                        "status":  "success",
+                        "error":  ""
+                    }
+                ]
+}

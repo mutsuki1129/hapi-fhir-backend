@@ -1,0 +1,29 @@
+{
+  "resourceType": "StructureDefinition",
+  "id": "patient-intake-observation",
+  "url": "https://example.org/fhir/StructureDefinition/patient-intake-observation",
+  "version": "0.1.0",
+  "name": "PatientIntakeObservationProfile",
+  "title": "Patient Intake Observation Profile",
+  "status": "active",
+  "experimental": true,
+  "date": "2026-04-23",
+  "publisher": "FHIR Server MVP",
+  "description": "Observation profile for patient intake social/behavior/biomarker data.",
+  "fhirVersion": "4.0.1",
+  "kind": "resource",
+  "abstract": false,
+  "type": "Observation",
+  "baseDefinition": "http://hl7.org/fhir/StructureDefinition/Observation",
+  "derivation": "constraint",
+  "differential": {
+    "element": [
+      { "id": "Observation", "path": "Observation" },
+      { "id": "Observation.status", "path": "Observation.status", "min": 1, "max": "1" },
+      { "id": "Observation.code", "path": "Observation.code", "min": 1, "max": "1" },
+      { "id": "Observation.subject", "path": "Observation.subject", "min": 1, "max": "1" },
+      { "id": "Observation.effectiveDateTime", "path": "Observation.effectiveDateTime", "min": 0, "max": "1" },
+      { "id": "Observation.value[x]", "path": "Observation.value[x]", "min": 0 }
+    ]
+  }
+}

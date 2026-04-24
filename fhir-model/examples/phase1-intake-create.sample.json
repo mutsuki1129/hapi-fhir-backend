@@ -1,0 +1,35 @@
+{
+  "patient": {
+    "id": "phase1-patient-001",
+    "family": "Chang",
+    "given": "YuHan",
+    "gender": "female",
+    "birthDate": "1994-03-16",
+    "nationalId": "F223456789",
+    "nhiCardNo": "NHI55667788"
+  },
+  "doctor": {
+    "id": "phase1-practitioner-001",
+    "family": "Lin",
+    "given": "JiaMin"
+  },
+  "intake": {
+    "educationLevel": "Bachelor",
+    "occupation": "Data Analyst",
+    "monthlyIncome": 85000,
+    "monthlyExpense": 47000,
+    "hobby": "Yoga, books, travel",
+    "psychologicalTraits": "Calm, curious, self-disciplined",
+    "behaviorPattern": "Regular routine and moderate exercise"
+  },
+  "biomarker": {
+    "code": "4548-4",
+    "display": "Hemoglobin A1c/Hemoglobin.total in Blood",
+    "value": 5.8,
+    "unit": "%"
+  },
+  "extraAttributes": {
+    "incomeSource": "Salary",
+    "livingStatus": "Lives with family"
+  }
+}

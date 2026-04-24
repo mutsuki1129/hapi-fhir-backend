@@ -1,0 +1,21 @@
+{
+    "generatedAt":  "2026-04-23T10:09:59.2179400+08:00",
+    "mode":  "dev",
+    "csvFile":  ".\\fhir-model\\examples\\patient-intake-batch.sample.csv",
+    "baseUrl":  "http://localhost:8091",
+    "validateOnly":  true,
+    "validationSummary":  {
+                              "errors":  0,
+                              "warnings":  0,
+                              "report":  ".\\fhir-model\\examples\\patient-intake-batch.sample.report.from-import.csv"
+                          },
+    "importSummary":  {
+                          "totalRows":  0,
+                          "success":  0,
+                          "skipped":  0,
+                          "failed":  0
+                      },
+    "results":  [
+
+                ]
+}

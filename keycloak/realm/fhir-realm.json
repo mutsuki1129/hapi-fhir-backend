@@ -1,0 +1,70 @@
+{
+  "realm": "fhir",
+  "enabled": true,
+  "registrationAllowed": false,
+  "resetPasswordAllowed": true,
+  "rememberMe": true,
+  "roles": {
+    "realm": [
+      {
+        "name": "fhir_user",
+        "description": "Basic FHIR API user role"
+      },
+      {
+        "name": "fhir_admin",
+        "description": "FHIR API admin role"
+      }
+    ]
+  },
+  "clients": [
+    {
+      "clientId": "fhir-backend",
+      "name": "FHIR Backend Client",
+      "enabled": true,
+      "publicClient": false,
+      "secret": "fhir-backend-secret",
+      "standardFlowEnabled": false,
+      "directAccessGrantsEnabled": true,
+      "serviceAccountsEnabled": true,
+      "protocol": "openid-connect",
+      "fullScopeAllowed": true
+    },
+    {
+      "clientId": "fhir-swagger",
+      "name": "FHIR Swagger Client",
+      "enabled": true,
+      "publicClient": true,
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": true,
+      "protocol": "openid-connect",
+      "redirectUris": [
+        "http://localhost:8090/*"
+      ],
+      "webOrigins": [
+        "+"
+      ],
+      "fullScopeAllowed": true
+    }
+  ],
+  "users": [
+    {
+      "username": "fhiruser",
+      "enabled": true,
+      "firstName": "FHIR",
+      "lastName": "User",
+      "email": "fhiruser@example.local",
+      "emailVerified": true,
+      "requiredActions": [],
+      "credentials": [
+        {
+          "type": "password",
+          "value": "fhiruser123",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "fhir_user"
+      ]
+    }
+  ]
+}

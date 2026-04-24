@@ -1,0 +1,32 @@
+{
+    "generatedAt":  "2026-04-23T10:09:52.5485112+08:00",
+    "mode":  "dev",
+    "csvFile":  ".\\fhir-model\\examples\\patient-intake-batch.invalid.sample.csv",
+    "baseUrl":  "http://localhost:8091",
+    "validateOnly":  false,
+    "validationSummary":  {
+                              "errors":  5,
+                              "warnings":  1,
+                              "report":  ".\\fhir-model\\examples\\patient-intake-batch.invalid.report.from-import.csv"
+                          },
+    "importSummary":  {
+                          "totalRows":  2,
+                          "success":  1,
+                          "skipped":  1,
+                          "failed":  0
+                      },
+    "results":  [
+                    {
+                        "row":  1,
+                        "patientId":  "bad1",
+                        "status":  "skipped",
+                        "error":  "Row has validation error(s)."
+                    },
+                    {
+                        "row":  2,
+                        "patientId":  "patient-202",
+                        "status":  "success",
+                        "error":  ""
+                    }
+                ]
+}

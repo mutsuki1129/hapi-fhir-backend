@@ -1,0 +1,82 @@
+services:
+  db:
+    image: postgres:16
+    container_name: hapi-fhir-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-hapi}
+      POSTGRES_USER: ${POSTGRES_USER:-hapi}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-hapi_pw}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U hapi -d hapi"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  hapi:
+    image: hapiproject/hapi@sha256:34c86fd5805df77c2b9d9c10538050b16ac3dc244352da0ebe4717f931330775
+    container_name: hapi-fhir-server
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE:-dev}
+      SPRING_DATASOURCE_URL: jdbc:postgresql://db:5432/${POSTGRES_DB:-hapi}
+      SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER:-hapi}
+      SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD:-hapi_pw}
+      SPRING_CONFIG_ADDITIONAL_LOCATION: file:/app/config/
+    volumes:
+      - ./config:/app/config:ro
+
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.1.5
+    container_name: fhir-keycloak
+    restart: unless-stopped
+    profiles:
+      - auth
+    ports:
+      - "8180:8180"
+    environment:
+      KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN:-admin}
+      KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-admin123}
+    command:
+      - start-dev
+      - --import-realm
+      - --http-port=8180
+      - --hostname=keycloak
+      - --hostname-strict=false
+    volumes:
+      - ./keycloak/realm:/opt/keycloak/data/import:ro
+
+  fhir-proxy:
+    image: quay.io/oauth2-proxy/oauth2-proxy:v7.8.1
+    container_name: fhir-oauth2-proxy
+    restart: unless-stopped
+    profiles:
+      - auth
+    depends_on:
+      - hapi
+      - keycloak
+    ports:
+      - "8090:4180"
+    command:
+      - --http-address=0.0.0.0:4180
+      - --provider=keycloak-oidc
+      - --oidc-issuer-url=http://keycloak:8180/realms/fhir
+      - --client-id=fhir-backend
+      - --client-secret=fhir-backend-secret
+      - --oidc-audience-claim=azp
+      - --cookie-secret=${OAUTH2_PROXY_COOKIE_SECRET:-MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=}
+      - --upstream=http://hapi:8090
+      - --email-domain=*
+      - --api-route=^/fhir/.*
+      - --skip-jwt-bearer-tokens=true
+      - --extra-jwt-issuers=http://keycloak:8180/realms/fhir=fhir-backend
+      - --skip-provider-button=true
+      - --insecure-oidc-allow-unverified-email=true
+
+volumes:
+  pgdata:

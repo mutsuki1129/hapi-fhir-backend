@@ -1,0 +1,362 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>FHIR CSV 匯入控制台</title>
+  <style>
+    :root {
+      --bg-1: #f6f8fb;
+      --bg-2: #e8eef6;
+      --panel: #ffffff;
+      --text: #1b2430;
+      --muted: #607086;
+      --line: #d8e0ea;
+      --ok: #137333;
+      --warn: #b26a00;
+      --err: #b3261e;
+      --accent: #0057b8;
+      --accent-2: #003a7a;
+      --shadow: 0 10px 30px rgba(0, 30, 80, 0.09);
+    }
+
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      color: var(--text);
+      font-family: "Segoe UI", "Noto Sans TC", "Microsoft JhengHei", sans-serif;
+      background:
+        radial-gradient(1200px 400px at 15% -20%, #d8e8ff, transparent 60%),
+        radial-gradient(900px 300px at 100% 0%, #ffe9d6, transparent 65%),
+        linear-gradient(180deg, var(--bg-1), var(--bg-2));
+      min-height: 100vh;
+    }
+
+    .wrap {
+      max-width: 1100px;
+      margin: 28px auto;
+      padding: 0 16px 24px;
+    }
+
+    .hero {
+      background: linear-gradient(135deg, #0f4b9a, #0a2f5e);
+      color: #fff;
+      border-radius: 18px;
+      padding: 22px 24px;
+      box-shadow: var(--shadow);
+      margin-bottom: 18px;
+    }
+
+    .hero h1 {
+      margin: 0 0 8px;
+      font-size: 1.45rem;
+      letter-spacing: 0.3px;
+    }
+
+    .hero p {
+      margin: 0;
+      opacity: 0.92;
+      line-height: 1.45;
+      font-size: 0.96rem;
+    }
+
+    .panel {
+      background: var(--panel);
+      border-radius: 14px;
+      border: 1px solid var(--line);
+      box-shadow: var(--shadow);
+      padding: 16px;
+      margin-bottom: 14px;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: 2fr 1fr 1fr;
+      gap: 12px;
+      align-items: end;
+    }
+
+    .field label {
+      display: block;
+      font-size: 0.86rem;
+      color: var(--muted);
+      margin-bottom: 6px;
+    }
+
+    input[type="file"],
+    select {
+      width: 100%;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 10px 11px;
+      font-size: 0.95rem;
+      background: #fff;
+    }
+
+    .checks {
+      display: flex;
+      gap: 20px;
+      margin-top: 10px;
+      color: var(--muted);
+      font-size: 0.92rem;
+      flex-wrap: wrap;
+    }
+
+    .actions {
+      display: flex;
+      gap: 10px;
+      margin-top: 14px;
+      flex-wrap: wrap;
+    }
+
+    button {
+      border: 0;
+      border-radius: 10px;
+      padding: 10px 14px;
+      font-size: 0.93rem;
+      cursor: pointer;
+      transition: transform 0.08s ease, opacity 0.2s ease;
+    }
+    button:active { transform: translateY(1px); }
+    button:disabled { opacity: 0.6; cursor: default; }
+
+    .btn-primary { background: var(--accent); color: #fff; }
+    .btn-secondary { background: #e7eef8; color: #0f3f78; }
+
+    .status {
+      margin-top: 10px;
+      font-size: 0.92rem;
+      color: var(--muted);
+      min-height: 20px;
+    }
+
+    .cards {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(110px, 1fr));
+      gap: 10px;
+      margin-bottom: 12px;
+    }
+
+    .card {
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 10px;
+      background: #fbfdff;
+    }
+
+    .card .k {
+      color: var(--muted);
+      font-size: 0.8rem;
+      margin-bottom: 5px;
+    }
+    .card .v {
+      font-size: 1.2rem;
+      font-weight: 600;
+    }
+
+    .v-ok { color: var(--ok); }
+    .v-warn { color: var(--warn); }
+    .v-err { color: var(--err); }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.88rem;
+    }
+    th, td {
+      border-bottom: 1px solid var(--line);
+      text-align: left;
+      padding: 8px 6px;
+      vertical-align: top;
+    }
+    th { color: var(--muted); font-weight: 600; }
+
+    .mono {
+      white-space: pre-wrap;
+      background: #101923;
+      color: #d6e6ff;
+      border-radius: 10px;
+      padding: 11px;
+      font-family: Consolas, "Courier New", monospace;
+      font-size: 0.82rem;
+      max-height: 220px;
+      overflow: auto;
+    }
+
+    @media (max-width: 860px) {
+      .grid { grid-template-columns: 1fr; }
+      .cards { grid-template-columns: repeat(2, minmax(110px, 1fr)); }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <section class="hero">
+      <h1>FHIR CSV 匯入控制台</h1>
+      <p>上傳 CSV 後可先驗證，再匯入病歷資料到 HAPI FHIR。頁面會顯示驗證問題、匯入明細與整體摘要。</p>
+    </section>
+
+    <section class="panel">
+      <div class="grid">
+        <div class="field">
+          <label for="csvFile">CSV 檔案</label>
+          <input id="csvFile" type="file" accept=".csv,text/csv" />
+        </div>
+        <div class="field">
+          <label for="mode">模式</label>
+          <select id="mode">
+            <option value="dev">dev (8091)</option>
+            <option value="auth">auth (8090)</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="baseUrl">Base URL（可選）</label>
+          <select id="baseUrl">
+            <option value="">使用模式預設</option>
+            <option value="http://localhost:8091">http://localhost:8091</option>
+            <option value="http://localhost:8090">http://localhost:8090</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="checks">
+        <label><input type="checkbox" id="continueOnError" /> 匯入時跳過錯誤列</label>
+      </div>
+
+      <div class="actions">
+        <button id="btnValidate" class="btn-secondary">只做驗證</button>
+        <button id="btnImport" class="btn-primary">驗證並匯入</button>
+      </div>
+
+      <div class="status" id="status">尚未執行</div>
+    </section>
+
+    <section class="panel">
+      <div class="cards">
+        <div class="card"><div class="k">Validation Errors</div><div class="v v-err" id="vErrors">0</div></div>
+        <div class="card"><div class="k">Validation Warnings</div><div class="v v-warn" id="vWarnings">0</div></div>
+        <div class="card"><div class="k">Import Success</div><div class="v v-ok" id="iSuccess">0</div></div>
+        <div class="card"><div class="k">Import Skipped / Failed</div><div class="v v-err" id="iSkippedFailed">0</div></div>
+      </div>
+
+      <h3>驗證問題</h3>
+      <table id="tblIssues">
+        <thead>
+          <tr><th>row</th><th>patient_id</th><th>field</th><th>severity</th><th>message</th></tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </section>
+
+    <section class="panel">
+      <h3>匯入結果</h3>
+      <table id="tblResult">
+        <thead>
+          <tr><th>row</th><th>patientId</th><th>status</th><th>error</th></tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </section>
+
+    <section class="panel">
+      <h3>執行紀錄</h3>
+      <div class="mono" id="logs"></div>
+    </section>
+  </div>
+
+  <script>
+    const el = (id) => document.getElementById(id);
+    const statusEl = el("status");
+    const logsEl = el("logs");
+    const btnValidate = el("btnValidate");
+    const btnImport = el("btnImport");
+
+    function setBusy(busy) {
+      btnValidate.disabled = busy;
+      btnImport.disabled = busy;
+      statusEl.textContent = busy ? "處理中..." : statusEl.textContent;
+    }
+
+    function clearTable(tbody) {
+      while (tbody.firstChild) tbody.removeChild(tbody.firstChild);
+    }
+
+    function appendRow(tbody, cols) {
+      const tr = document.createElement("tr");
+      cols.forEach((v) => {
+        const td = document.createElement("td");
+        td.textContent = (v ?? "").toString();
+        tr.appendChild(td);
+      });
+      tbody.appendChild(tr);
+    }
+
+    function renderResult(data) {
+      const validationSummary = data?.result?.validationSummary || {};
+      const importSummary = data?.result?.importSummary || {};
+      const issues = Array.isArray(data?.validationIssues) ? data.validationIssues : [];
+      const rows = Array.isArray(data?.result?.results) ? data.result.results : [];
+
+      el("vErrors").textContent = validationSummary.errors ?? 0;
+      el("vWarnings").textContent = validationSummary.warnings ?? 0;
+      el("iSuccess").textContent = importSummary.success ?? 0;
+      const skipped = importSummary.skipped ?? 0;
+      const failed = importSummary.failed ?? 0;
+      el("iSkippedFailed").textContent = skipped + failed;
+
+      const issuesBody = el("tblIssues").querySelector("tbody");
+      clearTable(issuesBody);
+      issues.forEach((r) => appendRow(issuesBody, [r.row, r.patient_id, r.field, r.severity, r.message]));
+
+      const resultBody = el("tblResult").querySelector("tbody");
+      clearTable(resultBody);
+      rows.forEach((r) => appendRow(resultBody, [r.row, r.patientId, r.status, r.error]));
+
+      logsEl.textContent = data?.logs || "";
+    }
+
+    async function run(validateOnly) {
+      const fileInput = el("csvFile");
+      const file = fileInput.files && fileInput.files[0];
+      if (!file) {
+        statusEl.textContent = "請先選擇 CSV 檔案";
+        return;
+      }
+
+      const csvText = await file.text();
+      const payload = {
+        mode: el("mode").value,
+        baseUrl: el("baseUrl").value,
+        continueOnValidationError: el("continueOnError").checked,
+        validateOnly,
+        csvText
+      };
+
+      try {
+        setBusy(true);
+        const resp = await fetch("/api/process", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload)
+        });
+        const data = await resp.json();
+        renderResult(data);
+
+        if (!resp.ok || !data.ok) {
+          statusEl.textContent = "執行失敗，請檢查下方紀錄";
+        } else {
+          statusEl.textContent = validateOnly ? "驗證完成" : "匯入完成";
+        }
+      } catch (err) {
+        logsEl.textContent = String(err);
+        statusEl.textContent = "請求失敗，請確認 UI 服務是否啟動";
+      } finally {
+        setBusy(false);
+      }
+    }
+
+    btnValidate.addEventListener("click", () => run(true));
+    btnImport.addEventListener("click", () => run(false));
+  </script>
+</body>
+</html>

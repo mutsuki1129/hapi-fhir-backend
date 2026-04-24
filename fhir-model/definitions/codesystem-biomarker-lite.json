@@ -1,0 +1,29 @@
+{
+  "resourceType": "CodeSystem",
+  "id": "biomarker-lite-cs",
+  "url": "https://example.org/fhir/CodeSystem/biomarker-lite",
+  "version": "0.1.0",
+  "name": "BiomarkerLiteCodeSystem",
+  "title": "Biomarker Lite Code System",
+  "status": "active",
+  "experimental": true,
+  "date": "2026-04-23",
+  "publisher": "FHIR Server MVP",
+  "description": "Local biomarker code system used when external terminology server is unavailable.",
+  "content": "complete",
+  "caseSensitive": false,
+  "concept": [
+    {
+      "code": "4548-4",
+      "display": "Hemoglobin A1c/Hemoglobin.total in Blood"
+    },
+    {
+      "code": "1988-5",
+      "display": "C reactive protein [Mass/volume] in Serum or Plasma"
+    },
+    {
+      "code": "39156-5",
+      "display": "Body mass index (BMI) [Ratio]"
+    }
+  ]
+}
