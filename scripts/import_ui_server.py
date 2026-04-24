@@ -229,7 +229,7 @@ class ImportUIHandler(BaseHTTPRequestHandler):
         self.send_header("Content-Type", content_type)
         self.send_header("Content-Length", str(content_len))
         self.send_header("Access-Control-Allow-Origin", self.cors_allow_origin)
-        self.send_header("Access-Control-Allow-Methods", "GET,POST,PATCH,OPTIONS")
+        self.send_header("Access-Control-Allow-Methods", "GET,POST,PATCH,DELETE,OPTIONS")
         self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization")
         self.end_headers()
 
@@ -391,6 +391,22 @@ class ImportUIHandler(BaseHTTPRequestHandler):
             return
         patient_id = urllib.parse.unquote(m.group(1))
         self._handle_patch_intake(patient_id)
+
+    def do_DELETE(self):
+        parsed = urllib.parse.urlparse(self.path)
+        m = re.match(r"^/api/patients/([^/]+)/intake$", parsed.path)
+        if not m:
+            self._write_json({"ok": False, "error": {"code": "NOT_FOUND", "message": "Not Found"}}, status=404)
+            return
+
+        patient_id = urllib.parse.unquote(m.group(1))
+        qs = urllib.parse.parse_qs(parsed.query)
+        mode = (qs.get("mode", ["dev"])[0] or "dev").strip()
+        if mode not in ("dev", "auth"):
+            self._write_json({"ok": False, "error": {"code": "INVALID_MODE", "message": "mode must be dev or auth."}}, status=400)
+            return
+        base_url = self._resolve_base_url(mode, (qs.get("baseUrl", [""])[0] or "").strip())
+        self._handle_delete_intake_observations(patient_id=patient_id, mode=mode, base_url=base_url)
 
     def _handle_import_ui_api(self):
         temp_csv = None
@@ -613,6 +629,96 @@ class ImportUIHandler(BaseHTTPRequestHandler):
                 return
 
             self._write_json({"ok": True, "data": summary, "logs": logs}, status=200)
+        except Exception as e:
+            self._write_json({"ok": False, "error": {"code": "INTERNAL_ERROR", "message": str(e)}}, status=500)
+
+    def _handle_delete_intake_observations(self, patient_id: str, mode: str, base_url: str):
+        try:
+            # Guardrail: we first confirm patient existence and only delete Observation resources.
+            status_patient, patient_obj = _fhir_request("GET", f"{base_url}/fhir/Patient/{patient_id}")
+            if status_patient >= 400 or status_patient == 0:
+                err = _parse_fhir_error(
+                    patient_obj if isinstance(patient_obj, str) else json.dumps(patient_obj, ensure_ascii=False),
+                    status_patient,
+                )
+                self._write_json({"ok": False, "error": err}, status=err["httpStatus"] if err["httpStatus"] > 0 else 500)
+                return
+
+            status_obs, obs_obj = _fhir_request("GET", f"{base_url}/fhir/Observation?subject=Patient/{patient_id}&_count=200")
+            if status_obs >= 400 or status_obs == 0:
+                err = _parse_fhir_error(
+                    obs_obj if isinstance(obs_obj, str) else json.dumps(obs_obj, ensure_ascii=False),
+                    status_obs,
+                )
+                self._write_json({"ok": False, "error": err}, status=err["httpStatus"] if err["httpStatus"] > 0 else 500)
+                return
+
+            observation_ids = []
+            if isinstance(obs_obj, dict):
+                for ent in obs_obj.get("entry", []) or []:
+                    res = ent.get("resource")
+                    if isinstance(res, dict):
+                        obs_id = str(res.get("id", "")).strip()
+                        if obs_id:
+                            observation_ids.append(obs_id)
+
+            deleted_ids = []
+            failed = []
+            for obs_id in observation_ids:
+                status_del, del_obj = _fhir_request("DELETE", f"{base_url}/fhir/Observation/{obs_id}")
+                if 200 <= status_del < 300:
+                    deleted_ids.append(obs_id)
+                else:
+                    failed.append(
+                        {
+                            "id": obs_id,
+                            "status": status_del,
+                            "payload": del_obj,
+                        }
+                    )
+
+            if failed:
+                first = failed[0]
+                err = _parse_fhir_error(
+                    first["payload"] if isinstance(first["payload"], str) else json.dumps(first["payload"], ensure_ascii=False),
+                    first["status"],
+                )
+                if err.get("code") == "UNKNOWN_ERROR":
+                    err["code"] = "DELETE_FAILED"
+                    err["message"] = "Failed to delete one or more observations."
+                self._write_json(
+                    {
+                        "ok": False,
+                        "error": err,
+                        "data": {
+                            "patientId": patient_id,
+                            "deletedObservationCount": len(deleted_ids),
+                            "deletedObservationIds": deleted_ids,
+                            "failedObservationIds": [x["id"] for x in failed],
+                            "patientDeleted": False,
+                        },
+                    },
+                    status=err["httpStatus"] if err["httpStatus"] > 0 else 500,
+                )
+                return
+
+            self._write_json(
+                {
+                    "ok": True,
+                    "data": {
+                        "patientId": patient_id,
+                        "deletedObservationCount": len(deleted_ids),
+                        "deletedObservationIds": deleted_ids,
+                        "patientDeleted": False,
+                    },
+                    "source": {
+                        "mode": mode,
+                        "baseUrl": base_url,
+                        "resourceType": ["Observation"],
+                    },
+                },
+                status=200,
+            )
         except Exception as e:
             self._write_json({"ok": False, "error": {"code": "INTERNAL_ERROR", "message": str(e)}}, status=500)
 

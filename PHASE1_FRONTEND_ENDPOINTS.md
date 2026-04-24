@@ -226,7 +226,42 @@ Updates the existing intake fields through `scripts/update-patient-intake.ps1`, 
 - `data` contains the refreshed intake summary
 - `logs` contains script output for diagnostics
 
-## 4. CSV Import UI Compatibility Endpoint
+## 4. DELETE /api/patients/{id}/intake
+
+Deletes only Phase 1 intake `Observation` resources for the patient. This flow never deletes `Patient`.
+
+### Request
+
+```http
+DELETE /api/patients/phase1-patient-001/intake?mode=dev
+```
+
+### Success Response
+
+```json
+{
+  "ok": true,
+  "data": {
+    "patientId": "phase1-patient-001",
+    "deletedObservationCount": 3,
+    "deletedObservationIds": [
+      "obs-phase1-patient-001-education",
+      "obs-phase1-patient-001-occupation",
+      "obs-phase1-patient-001-biomarker-4548-4"
+    ],
+    "patientDeleted": false
+  },
+  "source": {
+    "mode": "dev",
+    "baseUrl": "http://localhost:8091",
+    "resourceType": ["Observation"]
+  }
+}
+```
+
+`patientDeleted` is always `false` as an explicit guardrail signal for frontend integration.
+
+## 5. CSV Import UI Compatibility Endpoint
 
 The existing CSV upload UI still uses:
 
@@ -236,22 +271,22 @@ POST /api/process
 
 This endpoint accepts `csvText`, `mode`, optional `baseUrl`, `validateOnly`, and `continueOnValidationError`.
 
-## 5. CORS
+## 6. CORS
 
 The facade sends these headers:
 
 - `Access-Control-Allow-Origin`: value from `-CorsOrigin`, default `*`
-- `Access-Control-Allow-Methods`: `GET,POST,PATCH,OPTIONS`
+- `Access-Control-Allow-Methods`: `GET,POST,PATCH,DELETE,OPTIONS`
 - `Access-Control-Allow-Headers`: `Content-Type, Authorization`
 
 Use a specific origin for staging/production instead of `*`.
 
-## 6. Phase 1 Hardening Checklist
+## 7. Phase 1 Hardening Checklist
 
 - Facade endpoints expose a stable `ok/data/error` response shape.
 - HAPI `OperationOutcome` is mapped to UI-readable error codes.
 - CORS is explicit at the facade layer.
 - Patient not found is normalized as `PATIENT_NOT_FOUND`.
+- Observation delete flow only removes `Observation` resources and does not delete `Patient`.
 - Validation and script failures are normalized as `VALIDATION_ERROR` / `BAD_REQUEST` where possible.
 - `Condition`, `Media`, `DocumentReference`, and Practitioner workflow implementation remain out of scope.
-
