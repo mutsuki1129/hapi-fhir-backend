@@ -1,4 +1,4 @@
-﻿# FHIR Server（HAPI FHIR）
+# FHIR Server（HAPI FHIR）
 
 本專案從 0 開始建置 FHIR Server，基於 HAPI FHIR，並提供：
 - Docker 一鍵啟動（dev / auth 兩種模式）
@@ -8,16 +8,16 @@
 - Profile / ValueSet / CodeSystem 發布與 `$validate`
 - 簡易 Web UI 上傳 CSV
 
-## Backend stack and versions
+## 後端技術棧與版本
 
-- FHIR version: R4 (`4.0.1`)
-- HAPI FHIR image: `hapiproject/hapi@sha256:34c86fd5805df77c2b9d9c10538050b16ac3dc244352da0ebe4717f931330775`
-- HAPI FHIR release tracked by Phase 1 docs: `8.8.0`
-- Database: PostgreSQL 16
-- Optional auth: Keycloak `26.1.5` and oauth2-proxy `v7.8.1`
-- Phase 1 facade: Python `http.server` wrapper in `scripts/import_ui_server.py`
+- FHIR 版本：R4（`4.0.1`）
+- HAPI FHIR 映像：`hapiproject/hapi@sha256:34c86fd5805df77c2b9d9c10538050b16ac3dc244352da0ebe4717f931330775`
+- Phase 1 文件追蹤的 HAPI FHIR 版本：`8.8.0`
+- 資料庫：PostgreSQL 16
+- 可選驗證授權：Keycloak `26.1.5` 與 oauth2-proxy `v7.8.1`
+- Phase 1 facade：位於 `scripts/import_ui_server.py` 的 Python `http.server` 包裝層
 
-## 0. Repo baseline / Phase 1 邊界
+## 0. Repo 基線 / Phase 1 邊界
 
 - 目前目錄可直接作為專案工作區使用，但本機可能尚未初始化為 git repo；請不要在未確認團隊流程前自行 `git init` 或設定 remote。
 - Phase 1 backend 範圍：基線文件、HAPI FHIR dev/auth 啟動、Patient + Observation 既有能力、Phase 1 facade、CORS、OperationOutcome 錯誤映射與測試資料。
@@ -26,20 +26,20 @@
 
 ## Phase 1 facade API
 
-Default facade base URL: `http://127.0.0.1:8092`
+預設 facade base URL：`http://127.0.0.1:8092`
 
 - `GET /health`
 - `GET /api/patients/{id}/intake-summary`
 - `POST /api/patients/intake`
 - `PATCH /api/patients/{id}/intake`
-- `POST /api/process` for the existing CSV import UI compatibility path
+- `POST /api/process`：供既有 CSV 匯入 UI 的相容路徑使用
 
-All facade responses use a stable `ok/data/error` envelope. Error details are documented in `OPERATIONOUTCOME_UI_MAPPING.md` and `docs/phase1-frontend-error-smoke-test.md`.
+所有 facade 回應皆使用穩定的 `ok/data/error` 包裝格式。錯誤細節文件請見 `OPERATIONOUTCOME_UI_MAPPING.md` 與 `docs/phase1-frontend-error-smoke-test.md`。
 
 ## 1. 技術架構
 
 - FHIR Server：HAPI FHIR JPA Server（R4）
-- Database：PostgreSQL
+- 資料庫：PostgreSQL
 - 驗證與授權（可選）：Keycloak + OAuth2 Proxy
 - 開發環境：Docker Compose + PowerShell 腳本
 
@@ -51,21 +51,21 @@ All facade responses use a stable `ok/data/error` envelope. Error details are do
 Copy-Item .env.example .env
 ```
 
-### 2.1.1 Environment variables
+### 2.1.1 環境變數
 
-| Variable | Default | Purpose |
+| 變數 | 預設值 | 用途 |
 | --- | --- | --- |
-| `SPRING_PROFILES_ACTIVE` | `dev` | HAPI Spring profile. Use `dev` locally; append auth profile only when needed. |
-| `COMPOSE_PROFILES` | empty | Enables optional Compose profiles such as auth services. |
-| `POSTGRES_DB` | `hapi` | PostgreSQL database name. |
-| `POSTGRES_USER` | `hapi` | PostgreSQL username. |
-| `POSTGRES_PASSWORD` | `hapi_pw` | PostgreSQL password for local dev. |
-| `FHIR_JWT_ISSUER_URI` | `http://keycloak:8180/realms/fhir` | Issuer URL for auth-mode JWT validation. |
-| `KEYCLOAK_ADMIN` | `admin` | Local Keycloak admin user. |
-| `KEYCLOAK_ADMIN_PASSWORD` | `admin123` | Local Keycloak admin password. |
-| `OAUTH2_PROXY_COOKIE_SECRET` | local sample value | oauth2-proxy cookie secret for auth mode. |
+| `SPRING_PROFILES_ACTIVE` | `dev` | HAPI Spring profile。本機開發使用 `dev`；僅在需要時再附加 auth profile。 |
+| `COMPOSE_PROFILES` | 空值 | 啟用可選的 Compose profiles（例如 auth 服務）。 |
+| `POSTGRES_DB` | `hapi` | PostgreSQL 資料庫名稱。 |
+| `POSTGRES_USER` | `hapi` | PostgreSQL 使用者名稱。 |
+| `POSTGRES_PASSWORD` | `hapi_pw` | 本機開發用 PostgreSQL 密碼。 |
+| `FHIR_JWT_ISSUER_URI` | `http://keycloak:8180/realms/fhir` | auth 模式 JWT 驗證用的 issuer URL。 |
+| `KEYCLOAK_ADMIN` | `admin` | 本機 Keycloak 管理者帳號。 |
+| `KEYCLOAK_ADMIN_PASSWORD` | `admin123` | 本機 Keycloak 管理者密碼。 |
+| `OAUTH2_PROXY_COOKIE_SECRET` | 本機範例值 | auth 模式下 oauth2-proxy 的 cookie secret。 |
 
-Do not commit `.env`; keep committed defaults in `.env.example`.
+請勿提交 `.env`；可提交的預設值應保留在 `.env.example`。
 
 ### 2.2 dev 模式（直接打 HAPI）
 
@@ -224,24 +224,24 @@ docker compose down -v
   - `fhir-model/examples/phase1-intake-create.sample.json`
   - `scripts/seed-phase1-test-data.ps1`
 
-## Phase 1 known limitations
+## Phase 1 已知限制
 
-- HAPI native responses can still be raw FHIR `OperationOutcome`; the UI-facing stable envelope is provided by the Phase 1 facade.
-- CORS is explicit at the facade layer. HAPI native CORS remains a separate deployment concern for non-facade clients.
-- Network failure and timeout are normalized by the facade as `NETWORK_ERROR` and `TIMEOUT` for frontend hardening.
-- `Condition`, `Media`, `DocumentReference`, and Practitioner workflow implementation are deferred to later phases.
-- The local folder currently may not be initialized as a git repository; confirm team git workflow before making commits.
+- HAPI 原生回應仍可能是原始 FHIR `OperationOutcome`；提供給 UI 的穩定包裝格式由 Phase 1 facade 負責。
+- CORS 目前在 facade 層明確處理。對非 facade 客戶端而言，HAPI 原生 CORS 仍屬獨立部署議題。
+- 網路失敗與逾時在 facade 層會被正規化為 `NETWORK_ERROR` 與 `TIMEOUT`，用於前端硬化。
+- `Condition`、`Media`、`DocumentReference` 與 Practitioner workflow 實作延後至後續階段。
+- 本機資料夾目前可能尚未初始化為 git repository；提交前請先確認團隊 git 流程。
 
-## Documents
+## 文件
 
-- Backend docs index: `docs/README.md`
-- Repo baseline inventory: `docs/repo-baseline.md`
-- Frontend hardening matrix: `docs/phase1-frontend-error-smoke-test.md`
-- Facade contract: `PHASE1_FRONTEND_ENDPOINTS.md`
-- Error mapping: `OPERATIONOUTCOME_UI_MAPPING.md`
-- Server capability snapshot: `SERVER_CAPABILITY.md`
-- Phase 1 backend gaps: `BACKEND_GAPS_FOR_PHASE1.md`
-- Canonical shared project/backend docs: `C:\Users\clamp\Desktop\project\fhir document\common\project\*.md` and `C:\Users\clamp\Desktop\project\fhir document\common\backend\*.md`
+- 後端文件索引：`docs/README.md`
+- Repo 基線盤點：`docs/repo-baseline.md`
+- 前端硬化測試矩陣：`docs/phase1-frontend-error-smoke-test.md`
+- Facade 契約：`PHASE1_FRONTEND_ENDPOINTS.md`
+- 錯誤映射：`OPERATIONOUTCOME_UI_MAPPING.md`
+- Server 能力快照：`SERVER_CAPABILITY.md`
+- Phase 1 後端缺口：`BACKEND_GAPS_FOR_PHASE1.md`
+- 共享的 project/backend 正典文件：`C:\Users\clamp\Desktop\project\fhir document\common\project\*.md` 與 `C:\Users\clamp\Desktop\project\fhir document\common\backend\*.md`
 
 ## Phase 1 hardening 驗收命令
 
