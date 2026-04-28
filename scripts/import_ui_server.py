@@ -841,9 +841,37 @@ class ImportUIHandler(BaseHTTPRequestHandler):
 
             code_payload = payload.get("code")
             code_text = str(payload.get("codeText", "")).strip()
-            if not isinstance(code_payload, dict) and not code_text:
+            clinical_status = str(payload.get("clinicalStatus", "")).strip()
+            allowed_clinical_status = {"active", "recurrence", "relapse", "inactive", "remission", "resolved"}
+
+            validation_issues = []
+            if not clinical_status:
+                validation_issues.append("payload.clinicalStatus is required.")
+            elif clinical_status not in allowed_clinical_status:
+                validation_issues.append("payload.clinicalStatus must be one of: active, recurrence, relapse, inactive, remission, resolved.")
+
+            if not code_text and not isinstance(code_payload, dict):
+                validation_issues.append("Either payload.codeText (string) or payload.code (object) is required.")
+
+            if isinstance(code_payload, dict):
+                code_system = str(code_payload.get("system", "")).strip()
+                code_value = str(code_payload.get("code", "")).strip()
+                if not code_system:
+                    validation_issues.append("payload.code.system is required when payload.code is provided.")
+                if not code_value:
+                    validation_issues.append("payload.code.code is required when payload.code is provided.")
+
+            if validation_issues:
                 self._write_json(
-                    {"ok": False, "error": {"code": "VALIDATION_ERROR", "message": "Either payload.code (object) or payload.codeText (string) is required."}},
+                    {
+                        "ok": False,
+                        "error": {
+                            "code": "VALIDATION_ERROR",
+                            "message": "Condition payload validation failed.",
+                            "httpStatus": 400,
+                            "details": validation_issues,
+                        },
+                    },
                     status=400,
                 )
                 return
@@ -857,7 +885,7 @@ class ImportUIHandler(BaseHTTPRequestHandler):
                     "coding": [
                         {
                             "system": "http://terminology.hl7.org/CodeSystem/condition-clinical",
-                            "code": str(payload.get("clinicalStatus", "active")),
+                            "code": clinical_status,
                         }
                     ]
                 },

@@ -9,6 +9,7 @@ This folder holds backend-facing documentation for the Phase 1 baseline and hard
 - `phase1-temperature-case-repro.md`: minimal repro steps for importing a Phase 1 patient + body-temperature case.
 - `phase1-observation-delete-repro.md`: verification steps for deleting Phase 1 observations without deleting the patient.
 - `phase2-condition-repro.md`: minimum command set to verify Phase 2 Condition create/read flow.
+- `phase2-condition-contract.md`: Phase 2 Condition API contract, payload validation rules, and error codes.
 
 ## Root-Level Contract Docs
 
