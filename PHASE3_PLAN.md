@@ -1,83 +1,47 @@
 # PHASE3_PLAN
 
-## 1) 目標（Goals）
+## 目標
+1. 在不破壞 Phase 1/2 契約前提下，凍結後端欄位字典並建立可演進規則。
+2. 補齊跨資源（Patient / Practitioner / Observation / Condition / DocumentReference）契約對照與錯誤映射。
+3. 讓前後端在 Phase 3 開發期間以穩定 `ok/data/error` 介面協作。
 
-1. 在維持既有 Phase 1/2 契約穩定前提下，完成可上線等級的後端整合能力。
-2. 補齊 Phase 2 deferred 項目（錯誤分類精細化、自動化驗證、欄位命名凍結）。
-3. 提升跨資源一致性（Condition / Media / DocumentReference / Practitioner）與可維運性。
+## 範圍
+- 文件與契約層工作（欄位字典、錯誤碼、變更策略、待辦收斂）。
+- 既有 facade API 行為對齊與說明，不新增破壞性改動。
+- 延續 `fhir-model/examples/patient-intake-bundle.json` 作為欄位語意基準。
 
-## 2) 範圍（Scope）
+## 非目標
+- 不重寫 Phase 1/2 現有 API。
+- 不做破壞相容的欄位改名或刪除。
+- 不在本階段導入大規模資料搬遷。
 
-1. 契約層
-   - 鎖定並版控前後端欄位字典（payload/response）。
-   - 補齊 domain conflict 類型錯誤碼（例如 `CONFLICT_ERROR`）與映射規則。
-2. 驗證與品質
-   - 將 Phase 2 smoke commands 腳本化（PowerShell）。
-   - 建立可重複執行的 API 驗證流程（本機/CI）。
-3. 資源一致性
-   - 梳理 Practitioner 與 Condition/Observation/Media 的關聯欄位規範。
-   - 補齊必要查詢與更新流程的一致輸出格式（不破壞既有 endpoint）。
-4. 文件
-   - 更新契約、錯誤碼、測試流程與封版清單文件。
+## 里程碑
 
-## 3) 非目標（Non-Goals）
+### M1（已完成，後端）
+- [x] 新增 `docs/phase3-field-dictionary.md`，凍結主要資源欄位字典。
+- [x] 納入錯誤碼映射與前端可用欄位變更策略（additive first / deprecation window / version note）。
+- [x] 同步更新 Phase 3 待辦狀態（`待辦事項/Phase 3/backend-待辦.md`）。
 
-1. 不重寫或大幅重構既有 Phase 1/2 API 路徑。
-2. 不在本計畫內新增與本產品無直接關聯的 FHIR 資源流程。
-3. 不進行破壞性資料遷移或 destructive git 操作。
-4. 不在此規劃文件中直接實作功能。
+### M2（待執行）
+- [ ] 依欄位字典補 smoke 測試樣本（成功/驗證失敗/not-found）。
+- [ ] 針對跨資源關聯補最小一致性檢核（病人、醫師、條件、文件）。
 
-## 4) 里程碑（Milestones）
+### M3（待執行）
+- [ ] 版本註記流程常態化（每次契約變更附日期與相容性說明）。
+- [ ] 封版前完成 deferred 項目風險再評估與交接說明。
 
-### M1：契約凍結與錯誤碼擴充
+## 風險
+1. 各環境 HAPI 回傳 diagnostics 細節不同，可能影響錯誤碼判斷穩定度。
+2. 若前端以文案而非 `error.code` 分支，契約演進風險升高。
+3. 跨資源關聯資料若未統一命名與格式，會放大整合成本。
 
-- 產出最終欄位字典（frontend/backend 對齊版）。
-- 新增並文件化 conflict 類錯誤碼與判斷條件。
-- 完成契約文件 review。
+## 驗收標準
+1. 欄位字典可直接對應現有 facade payload/response。
+2. 主要錯誤碼可由前端穩定使用（至少 `VALIDATION_ERROR` / `*_NOT_FOUND` / `NETWORK_ERROR` / `TIMEOUT`）。
+3. 待辦文件清楚標示完成、deferred 與下一步。
 
-### M2：自動化驗證落地
-
-- 將 smoke test 命令整併為可執行腳本。
-- 補齊成功/失敗案例（validation、not-found、conflict、timeout）。
-- 建立封版前標準檢查流程。
-
-### M3：關聯一致性與封版就緒
-
-- 完成 Practitioner 關聯欄位一致性檢查與文件回填。
-- 完成跨資源輸出格式一致性驗證。
-- 完成 Phase 3 封版檢查清單。
-
-## 5) 風險（Risks）
-
-1. 前後端欄位命名未及時凍結，導致重複映射與回歸成本增加。
-2. 上游 HAPI 行為差異（search parameter / error diagnostics）影響 facade 穩定性。
-3. 自動化測試覆蓋不足，造成封版前人工驗證負擔過高。
-4. 新增錯誤碼若未同步前端處理，可能出現 UI 分支缺漏。
-
-## 6) 驗收標準（Acceptance Criteria）
-
-1. 契約文件
-   - 有正式欄位字典版本與變更記錄。
-   - Condition/Media/DocumentReference/Practitioner 皆有清楚 payload/response 規範。
-2. 錯誤映射
-   - not-found、validation、conflict、timeout/network 至少各有一個可重現案例。
-   - facade 仍維持 `ok/data/error` 回應風格。
-3. 自動化驗證
-   - 一鍵執行 smoke script 可覆蓋主要路徑。
-   - 驗證結果可作為封版依據。
-4. 相容性
-   - 既有 Phase 1/2 endpoint 契約不破壞。
-
-## 7) 與前端契約策略（Frontend Contract Strategy）
-
-1. 版本化契約
-   - 以文件版號管理欄位字典與錯誤碼映射。
-   - 每次契約變更附 migration note 與範例。
-2. 穩定回應形狀
-   - 持續使用 `ok/data/error` 包裝，避免前端解析分岔。
-3. 先增量、後替換
-   - 新欄位先 additive，保留舊欄位過渡期；移除須有公告窗口。
-4. 雙向驗證
-   - 前端提供使用情境，後端提供可重現 API 命令與預期結果。
-5. 封版節奏
-   - 封版前至少一次契約對齊會議，確認 deferred 是否轉入下一批或解除。
+## 與前端契約策略
+1. Additive first：先加欄位、不刪欄位。
+2. Deprecation window：淘汰欄位需保留觀察期並提供替代方案。
+3. Version note：每次契約變更需附日期、摘要、相容性影響。
+4. 前端錯誤處理以 `error.code` 為主，`message` 僅作顯示。
