@@ -1,51 +1,69 @@
 # PHASE2_TASKS
 
-## Goal
+## 目標
 
-Deliver Phase 2 backend additions in small, non-breaking batches on top of the existing Phase 1 facade.
+在不破壞 Phase 1 契約的前提下，完成 Phase 2 後端最小可用能力，並具備可重現驗證文件，供封版使用。
 
-## Guardrails
+## 契約守則
 
-- Keep existing Phase 1 Patient/Observation flows unchanged.
-- Keep facade response envelope stable (`ok/data/error`).
-- Add new resources incrementally and independently.
-- Avoid schema/contract churn on existing Phase 1 endpoints.
+- 保持 Phase 1 Patient/Observation 既有流程不變。
+- 保持 facade 回應格式穩定（`ok/data/error`）。
+- 新增資源以增量方式交付，不重構既有路徑。
 
-## Phase 2 Work Breakdown
+## Phase 2 實作狀態（封版）
 
-### P0 - Foundation
+### P0 Foundation
 
-1. Confirm Phase 2 scope and Phase 1 limitations baseline.
-2. Define Phase 2 endpoint docs and validation/repro commands.
-3. Extend error mapping for new resource not-found cases.
+- [x] Phase 2 範圍與邊界確認
+- [x] Phase 2 契約與重現命令文件建立
+- [x] 錯誤映射擴充（Condition / Media / DocumentReference / Practitioner）
 
-### P1 - Condition (first delivery)
+### P1 Condition
 
-1. Add `POST /api/patients/{id}/conditions` (create Condition).
-2. Add `GET /api/patients/{id}/conditions` (list by patient).
-3. Add `GET /api/conditions/{id}` (single read for follow-up fetch).
-4. Keep payload minimal and compatible with HAPI R4 Condition core fields.
-5. Add reproducible command set for create/read verification.
+- [x] `POST /api/patients/{id}/conditions`
+- [x] `GET /api/patients/{id}/conditions`
+- [x] `GET /api/conditions/{id}`
+- [x] 建立 payload 驗證（`clinicalStatus`、`codeText`/`code`）
+- [x] 可選 `asserterPractitionerId` 關聯
 
-### P2 - Media / DocumentReference
+### P2 Media / DocumentReference
 
-1. Define upload/reference strategy and metadata contract.
-2. Add patient-scoped list/create endpoints.
-3. Keep linkage with Patient/Condition lightweight.
+- [x] `POST /api/patients/{id}/media`
+- [x] `GET /api/patients/{id}/media`
+- [x] `POST /api/patients/{id}/documents`
+- [x] `GET /api/patients/{id}/documents`
+- [x] 最小 metadata 契約（`contentType`、`url`、`title`/`description`）
 
-### P3 - Practitioner workflow hardening
+### P3 Practitioner
 
-1. Add Practitioner list/create/edit facade routes.
-2. Align Observation/Condition author or asserter references.
-3. Add minimal search/filter contract for frontend page usage.
+- [x] `GET /api/practitioners`（含 `name` 查詢）
+- [x] `POST /api/practitioners`
+- [x] `PATCH /api/practitioners/{id}`
+- [x] 與 Condition asserter 串接
 
-## Implementation Status (this batch)
+### 文件與驗證
 
-- [x] Phase 2 Condition create/list/read facade API
-- [x] Error mapping extension for Condition not found
-- [x] Endpoint documentation and repro steps
-- [x] Media facade patient list/create API
-- [x] DocumentReference facade patient list/create API
-- [x] Practitioner facade list/create/edit API
-- [x] Condition optional asserter linkage with Practitioner (`asserterPractitionerId`)
-- [x] Phase 2 smoke-test command document
+- [x] `PHASE2_FRONTEND_ENDPOINTS.md`
+- [x] `docs/phase2-condition-contract.md`
+- [x] `docs/phase2-smoke-test.md`
+- [x] `OPERATIONOUTCOME_UI_MAPPING.md`（Phase 2 新資源錯誤碼）
+
+## Deferred（保留至後續批次）
+
+### D1. Domain conflict 錯誤分類細化
+
+- 原因：本批次先完成可用 API 與穩定契約，衝突類型先以 `VALIDATION_ERROR` / `BAD_REQUEST` 表達。
+- 風險：前端對重複/衝突情境提示粒度不足。
+- Next step：新增 `CONFLICT_ERROR` 類型與對應判斷規則，回填契約文件。
+
+### D2. 自動化測試腳本化
+
+- 原因：目前提供可執行 smoke 指令，但未整合為單一自動化流程。
+- 風險：回歸驗證依賴人工操作，封版前檢查成本較高。
+- Next step：新增可重複執行的 PowerShell smoke script，並規劃接入 CI。
+
+### D3. 前端欄位命名最終凍結
+
+- 原因：需與前端共同確認最終畫面需求與欄位字典。
+- 風險：若雙方命名認知不同，會增加映射補丁成本。
+- Next step：與前端共同完成 payload/response 欄位字典鎖定並同步文件。
