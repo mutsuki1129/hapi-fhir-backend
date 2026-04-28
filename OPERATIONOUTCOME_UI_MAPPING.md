@@ -31,6 +31,7 @@ HAPI FHIR returns errors as FHIR `OperationOutcome`. The Phase 1 facade normaliz
 | HTTP 403 | `FORBIDDEN` | You do not have permission to perform this action. |
 | HTTP 404 and diagnostics references `Patient/` | `PATIENT_NOT_FOUND` | Patient was not found. |
 | HTTP 404 and diagnostics references `Observation/` | `OBSERVATION_NOT_FOUND` | Observation was not found. |
+| HTTP 404 and diagnostics references `Condition/` | `CONDITION_NOT_FOUND` | Condition was not found. |
 | HTTP 404 otherwise | `RESOURCE_NOT_FOUND` | Requested resource was not found. |
 | HTTP 400 and `issue.code` is `invalid`, `structure`, `value`, or `processing` | `VALIDATION_ERROR` | Submitted data is invalid. Please review the highlighted fields. |
 | HTTP 400 otherwise | `BAD_REQUEST` | Request could not be processed. |
@@ -51,6 +52,7 @@ When diagnostics contain `HAPI-2001` and `not known`, the facade maps:
 
 - `Patient/...` diagnostics to `PATIENT_NOT_FOUND`
 - `Observation/...` diagnostics to `OBSERVATION_NOT_FOUND`
+- `Condition/...` diagnostics to `CONDITION_NOT_FOUND`
 - other resource diagnostics to `RESOURCE_NOT_FOUND`
 
 ## Frontend Usage Guidance
@@ -60,6 +62,6 @@ When diagnostics contain `HAPI-2001` and `not known`, the facade maps:
 3. Log `diagnostics` for developer troubleshooting when present.
 4. Keep `rawOperationOutcome` for debugging only; do not build UI behavior from it.
 
-## Phase 1 Boundary
+## Phase 1 / Phase 2 Boundary
 
-This mapping is only a Phase 1 backend hardening layer. It does not add new clinical workflows for `Condition`, `Media`, `DocumentReference`, or Practitioner pages.
+This mapping started in Phase 1 and is extended in Phase 2 for the first `Condition` workflow. `Media`, `DocumentReference`, and broader Practitioner page workflows remain outside this batch.

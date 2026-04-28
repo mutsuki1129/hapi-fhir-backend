@@ -151,6 +151,9 @@ def _parse_fhir_error(raw_text: str, status_code: int):
         elif "Observation/" in diagnostics:
             code = "OBSERVATION_NOT_FOUND"
             message = "Observation was not found."
+        elif "Condition/" in diagnostics:
+            code = "CONDITION_NOT_FOUND"
+            message = "Condition was not found."
         else:
             code = "RESOURCE_NOT_FOUND"
             message = "Requested resource was not found."
@@ -172,6 +175,9 @@ def _parse_fhir_error(raw_text: str, status_code: int):
         elif "Observation/" in diagnostics:
             code = "OBSERVATION_NOT_FOUND"
             message = "Observation was not found."
+        elif "Condition/" in diagnostics:
+            code = "CONDITION_NOT_FOUND"
+            message = "Condition was not found."
         else:
             code = "RESOURCE_NOT_FOUND"
             message = "Requested resource was not found."
@@ -329,6 +335,30 @@ class ImportUIHandler(BaseHTTPRequestHandler):
             },
         }
 
+    def _collect_patient_conditions(self, base_url: str, patient_id: str, token: str = ""):
+        status, patient_obj = _fhir_request("GET", f"{base_url}/fhir/Patient/{patient_id}", token=token)
+        if status >= 400 or status == 0:
+            return status, patient_obj
+
+        status_cond, cond_obj = _fhir_request("GET", f"{base_url}/fhir/Condition?subject=Patient/{patient_id}&_count=200", token=token)
+        if status_cond >= 400 or status_cond == 0:
+            return status_cond, cond_obj
+
+        conditions = []
+        if isinstance(cond_obj, dict):
+            for ent in cond_obj.get("entry", []) or []:
+                res = ent.get("resource")
+                if isinstance(res, dict):
+                    conditions.append(res)
+
+        return 200, {
+            "patientId": patient_id,
+            "conditions": conditions,
+            "summary": {
+                "conditionCount": len(conditions),
+            },
+        }
+
     def do_OPTIONS(self):
         self._send_headers(204, "text/plain; charset=utf-8", 0)
 
@@ -370,16 +400,80 @@ class ImportUIHandler(BaseHTTPRequestHandler):
             )
             return
 
+        m = re.match(r"^/api/patients/([^/]+)/conditions$", path)
+        if m:
+            patient_id = urllib.parse.unquote(m.group(1))
+            mode = (qs.get("mode", ["dev"])[0] or "dev").strip()
+            if mode not in ("dev", "auth"):
+                self._write_json({"ok": False, "error": {"code": "INVALID_MODE", "message": "mode must be dev or auth."}}, status=400)
+                return
+            base_url = self._resolve_base_url(mode, (qs.get("baseUrl", [""])[0] or "").strip())
+            status, payload = self._collect_patient_conditions(base_url=base_url, patient_id=patient_id)
+            if status != 200:
+                err = _parse_fhir_error(payload if isinstance(payload, str) else json.dumps(payload, ensure_ascii=False), status)
+                self._write_json({"ok": False, "error": err}, status=err["httpStatus"] if err["httpStatus"] > 0 else 500)
+                return
+
+            self._write_json(
+                {
+                    "ok": True,
+                    "data": payload,
+                    "source": {
+                        "mode": mode,
+                        "baseUrl": base_url,
+                        "resourceType": ["Condition"],
+                    },
+                },
+                status=200,
+            )
+            return
+
+        m = re.match(r"^/api/conditions/([^/]+)$", path)
+        if m:
+            condition_id = urllib.parse.unquote(m.group(1))
+            mode = (qs.get("mode", ["dev"])[0] or "dev").strip()
+            if mode not in ("dev", "auth"):
+                self._write_json({"ok": False, "error": {"code": "INVALID_MODE", "message": "mode must be dev or auth."}}, status=400)
+                return
+            base_url = self._resolve_base_url(mode, (qs.get("baseUrl", [""])[0] or "").strip())
+            status, payload = _fhir_request("GET", f"{base_url}/fhir/Condition/{condition_id}")
+            if status >= 400 or status == 0:
+                err = _parse_fhir_error(payload if isinstance(payload, str) else json.dumps(payload, ensure_ascii=False), status)
+                self._write_json({"ok": False, "error": err}, status=err["httpStatus"] if err["httpStatus"] > 0 else 500)
+                return
+
+            self._write_json(
+                {
+                    "ok": True,
+                    "data": payload,
+                    "source": {
+                        "mode": mode,
+                        "baseUrl": base_url,
+                        "resourceType": ["Condition"],
+                    },
+                },
+                status=200,
+            )
+            return
+
         self._write_json({"ok": False, "error": {"code": "NOT_FOUND", "message": "Not Found"}}, status=404)
 
     def do_POST(self):
-        if self.path == "/api/process":
+        path = urllib.parse.urlparse(self.path).path
+
+        if path == "/api/process":
             # Keep existing import UI API.
             self._handle_import_ui_api()
             return
 
-        if self.path == "/api/patients/intake":
+        if path == "/api/patients/intake":
             self._handle_create_intake()
+            return
+
+        m = re.match(r"^/api/patients/([^/]+)/conditions$", path)
+        if m:
+            patient_id = urllib.parse.unquote(m.group(1))
+            self._handle_create_condition(patient_id)
             return
 
         self._write_json({"ok": False, "error": {"code": "NOT_FOUND", "message": "Not Found"}}, status=404)
@@ -718,6 +812,133 @@ class ImportUIHandler(BaseHTTPRequestHandler):
                     },
                 },
                 status=200,
+            )
+        except Exception as e:
+            self._write_json({"ok": False, "error": {"code": "INTERNAL_ERROR", "message": str(e)}}, status=500)
+
+    def _handle_create_condition(self, patient_id: str):
+        try:
+            body = self._read_json_body()
+            mode = str(body.get("mode", "dev")).strip() or "dev"
+            if mode not in ("dev", "auth"):
+                self._write_json({"ok": False, "error": {"code": "INVALID_MODE", "message": "mode must be dev or auth."}}, status=400)
+                return
+
+            base_url = self._resolve_base_url(mode, str(body.get("baseUrl", "")).strip())
+            payload = body.get("payload")
+            if not isinstance(payload, dict):
+                self._write_json({"ok": False, "error": {"code": "INVALID_PAYLOAD", "message": "payload (object) is required."}}, status=400)
+                return
+
+            status_patient, patient_obj = _fhir_request("GET", f"{base_url}/fhir/Patient/{patient_id}")
+            if status_patient >= 400 or status_patient == 0:
+                err = _parse_fhir_error(
+                    patient_obj if isinstance(patient_obj, str) else json.dumps(patient_obj, ensure_ascii=False),
+                    status_patient,
+                )
+                self._write_json({"ok": False, "error": err}, status=err["httpStatus"] if err["httpStatus"] > 0 else 500)
+                return
+
+            code_payload = payload.get("code")
+            code_text = str(payload.get("codeText", "")).strip()
+            if not isinstance(code_payload, dict) and not code_text:
+                self._write_json(
+                    {"ok": False, "error": {"code": "VALIDATION_ERROR", "message": "Either payload.code (object) or payload.codeText (string) is required."}},
+                    status=400,
+                )
+                return
+
+            condition_resource = {
+                "resourceType": "Condition",
+                "subject": {
+                    "reference": f"Patient/{patient_id}",
+                },
+                "clinicalStatus": {
+                    "coding": [
+                        {
+                            "system": "http://terminology.hl7.org/CodeSystem/condition-clinical",
+                            "code": str(payload.get("clinicalStatus", "active")),
+                        }
+                    ]
+                },
+                "verificationStatus": {
+                    "coding": [
+                        {
+                            "system": "http://terminology.hl7.org/CodeSystem/condition-ver-status",
+                            "code": str(payload.get("verificationStatus", "confirmed")),
+                        }
+                    ]
+                },
+                "category": [
+                    {
+                        "coding": [
+                            {
+                                "system": "http://terminology.hl7.org/CodeSystem/condition-category",
+                                "code": str(payload.get("categoryCode", "problem-list-item")),
+                            }
+                        ],
+                        "text": str(payload.get("categoryText", "Problem List Item")),
+                    }
+                ],
+            }
+
+            if isinstance(code_payload, dict):
+                coding = {}
+                if str(code_payload.get("system", "")).strip():
+                    coding["system"] = str(code_payload.get("system")).strip()
+                if str(code_payload.get("code", "")).strip():
+                    coding["code"] = str(code_payload.get("code")).strip()
+                if str(code_payload.get("display", "")).strip():
+                    coding["display"] = str(code_payload.get("display")).strip()
+
+                condition_code = {}
+                if coding:
+                    condition_code["coding"] = [coding]
+                if code_text:
+                    condition_code["text"] = code_text
+                elif str(code_payload.get("display", "")).strip():
+                    condition_code["text"] = str(code_payload.get("display")).strip()
+                else:
+                    condition_code["text"] = "Condition"
+                condition_resource["code"] = condition_code
+            else:
+                condition_resource["code"] = {"text": code_text}
+
+            onset_date_time = str(payload.get("onsetDateTime", "")).strip()
+            if onset_date_time:
+                condition_resource["onsetDateTime"] = onset_date_time
+
+            recorded_date = str(payload.get("recordedDate", "")).strip()
+            if recorded_date:
+                condition_resource["recordedDate"] = recorded_date
+
+            note_text = str(payload.get("note", "")).strip()
+            if note_text:
+                condition_resource["note"] = [{"text": note_text}]
+
+            status_create, created_obj = _fhir_request("POST", f"{base_url}/fhir/Condition", data=condition_resource)
+            if status_create >= 400 or status_create == 0:
+                err = _parse_fhir_error(
+                    created_obj if isinstance(created_obj, str) else json.dumps(created_obj, ensure_ascii=False),
+                    status_create,
+                )
+                self._write_json({"ok": False, "error": err}, status=err["httpStatus"] if err["httpStatus"] > 0 else 500)
+                return
+
+            self._write_json(
+                {
+                    "ok": True,
+                    "data": {
+                        "patientId": patient_id,
+                        "condition": created_obj,
+                    },
+                    "source": {
+                        "mode": mode,
+                        "baseUrl": base_url,
+                        "resourceType": ["Condition"],
+                    },
+                },
+                status=201,
             )
         except Exception as e:
             self._write_json({"ok": False, "error": {"code": "INTERNAL_ERROR", "message": str(e)}}, status=500)
