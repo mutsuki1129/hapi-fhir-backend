@@ -154,6 +154,15 @@ def _parse_fhir_error(raw_text: str, status_code: int):
         elif "Condition/" in diagnostics:
             code = "CONDITION_NOT_FOUND"
             message = "Condition was not found."
+        elif "Media/" in diagnostics:
+            code = "MEDIA_NOT_FOUND"
+            message = "Media was not found."
+        elif "DocumentReference/" in diagnostics:
+            code = "DOCUMENTREFERENCE_NOT_FOUND"
+            message = "DocumentReference was not found."
+        elif "Practitioner/" in diagnostics:
+            code = "PRACTITIONER_NOT_FOUND"
+            message = "Practitioner was not found."
         else:
             code = "RESOURCE_NOT_FOUND"
             message = "Requested resource was not found."
@@ -178,6 +187,15 @@ def _parse_fhir_error(raw_text: str, status_code: int):
         elif "Condition/" in diagnostics:
             code = "CONDITION_NOT_FOUND"
             message = "Condition was not found."
+        elif "Media/" in diagnostics:
+            code = "MEDIA_NOT_FOUND"
+            message = "Media was not found."
+        elif "DocumentReference/" in diagnostics:
+            code = "DOCUMENTREFERENCE_NOT_FOUND"
+            message = "DocumentReference was not found."
+        elif "Practitioner/" in diagnostics:
+            code = "PRACTITIONER_NOT_FOUND"
+            message = "Practitioner was not found."
         else:
             code = "RESOURCE_NOT_FOUND"
             message = "Requested resource was not found."
@@ -359,6 +377,97 @@ class ImportUIHandler(BaseHTTPRequestHandler):
             },
         }
 
+    def _collect_patient_media(self, base_url: str, patient_id: str, token: str = ""):
+        status, patient_obj = _fhir_request("GET", f"{base_url}/fhir/Patient/{patient_id}", token=token)
+        if status >= 400 or status == 0:
+            return status, patient_obj
+
+        status_media, media_obj = _fhir_request("GET", f"{base_url}/fhir/Media?patient={patient_id}&_count=200", token=token)
+        if status_media >= 400 or status_media == 0:
+            return status_media, media_obj
+
+        items = []
+        if isinstance(media_obj, dict):
+            for ent in media_obj.get("entry", []) or []:
+                res = ent.get("resource")
+                if isinstance(res, dict):
+                    items.append(res)
+
+        return 200, {
+            "patientId": patient_id,
+            "items": items,
+            "summary": {
+                "mediaCount": len(items),
+            },
+        }
+
+    def _collect_patient_documents(self, base_url: str, patient_id: str, token: str = ""):
+        status, patient_obj = _fhir_request("GET", f"{base_url}/fhir/Patient/{patient_id}", token=token)
+        if status >= 400 or status == 0:
+            return status, patient_obj
+
+        status_doc, doc_obj = _fhir_request("GET", f"{base_url}/fhir/DocumentReference?patient={patient_id}&_count=200", token=token)
+        if status_doc >= 400 or status_doc == 0:
+            return status_doc, doc_obj
+
+        items = []
+        if isinstance(doc_obj, dict):
+            for ent in doc_obj.get("entry", []) or []:
+                res = ent.get("resource")
+                if isinstance(res, dict):
+                    items.append(res)
+
+        return 200, {
+            "patientId": patient_id,
+            "items": items,
+            "summary": {
+                "documentReferenceCount": len(items),
+            },
+        }
+
+    def _collect_practitioners(self, base_url: str, query_name: str = "", token: str = ""):
+        search_query = "_count=200"
+        if query_name:
+            search_query += "&name=" + urllib.parse.quote(query_name)
+        status, pr_obj = _fhir_request("GET", f"{base_url}/fhir/Practitioner?{search_query}", token=token)
+        if status >= 400 or status == 0:
+            return status, pr_obj
+
+        items = []
+        if isinstance(pr_obj, dict):
+            for ent in pr_obj.get("entry", []) or []:
+                res = ent.get("resource")
+                if isinstance(res, dict):
+                    items.append(res)
+
+        # Fallback: some environments may return empty result for name search even when a match exists.
+        if query_name and not items:
+            status_all, all_obj = _fhir_request("GET", f"{base_url}/fhir/Practitioner?_count=200", token=token)
+            if status_all >= 400 or status_all == 0:
+                return status_all, all_obj
+            if isinstance(all_obj, dict):
+                needle = query_name.lower()
+                for ent in all_obj.get("entry", []) or []:
+                    res = ent.get("resource")
+                    if not isinstance(res, dict):
+                        continue
+                    names = res.get("name", []) or []
+                    family = ""
+                    given = ""
+                    if names and isinstance(names[0], dict):
+                        family = str(names[0].get("family", "")).lower()
+                        given_list = names[0].get("given", []) or []
+                        given = " ".join([str(x).lower() for x in given_list if x is not None])
+                    if needle in family or needle in given:
+                        items.append(res)
+
+        return 200, {
+            "items": items,
+            "summary": {
+                "count": len(items),
+            },
+        }
+
     def do_OPTIONS(self):
         self._send_headers(204, "text/plain; charset=utf-8", 0)
 
@@ -456,6 +565,53 @@ class ImportUIHandler(BaseHTTPRequestHandler):
             )
             return
 
+        m = re.match(r"^/api/patients/([^/]+)/media$", path)
+        if m:
+            patient_id = urllib.parse.unquote(m.group(1))
+            mode = (qs.get("mode", ["dev"])[0] or "dev").strip()
+            if mode not in ("dev", "auth"):
+                self._write_json({"ok": False, "error": {"code": "INVALID_MODE", "message": "mode must be dev or auth."}}, status=400)
+                return
+            base_url = self._resolve_base_url(mode, (qs.get("baseUrl", [""])[0] or "").strip())
+            status, payload = self._collect_patient_media(base_url=base_url, patient_id=patient_id)
+            if status != 200:
+                err = _parse_fhir_error(payload if isinstance(payload, str) else json.dumps(payload, ensure_ascii=False), status)
+                self._write_json({"ok": False, "error": err}, status=err["httpStatus"] if err["httpStatus"] > 0 else 500)
+                return
+            self._write_json({"ok": True, "data": payload, "source": {"mode": mode, "baseUrl": base_url, "resourceType": ["Media"]}}, status=200)
+            return
+
+        m = re.match(r"^/api/patients/([^/]+)/documents$", path)
+        if m:
+            patient_id = urllib.parse.unquote(m.group(1))
+            mode = (qs.get("mode", ["dev"])[0] or "dev").strip()
+            if mode not in ("dev", "auth"):
+                self._write_json({"ok": False, "error": {"code": "INVALID_MODE", "message": "mode must be dev or auth."}}, status=400)
+                return
+            base_url = self._resolve_base_url(mode, (qs.get("baseUrl", [""])[0] or "").strip())
+            status, payload = self._collect_patient_documents(base_url=base_url, patient_id=patient_id)
+            if status != 200:
+                err = _parse_fhir_error(payload if isinstance(payload, str) else json.dumps(payload, ensure_ascii=False), status)
+                self._write_json({"ok": False, "error": err}, status=err["httpStatus"] if err["httpStatus"] > 0 else 500)
+                return
+            self._write_json({"ok": True, "data": payload, "source": {"mode": mode, "baseUrl": base_url, "resourceType": ["DocumentReference"]}}, status=200)
+            return
+
+        if path == "/api/practitioners":
+            mode = (qs.get("mode", ["dev"])[0] or "dev").strip()
+            if mode not in ("dev", "auth"):
+                self._write_json({"ok": False, "error": {"code": "INVALID_MODE", "message": "mode must be dev or auth."}}, status=400)
+                return
+            base_url = self._resolve_base_url(mode, (qs.get("baseUrl", [""])[0] or "").strip())
+            query_name = (qs.get("name", [""])[0] or "").strip()
+            status, payload = self._collect_practitioners(base_url=base_url, query_name=query_name)
+            if status != 200:
+                err = _parse_fhir_error(payload if isinstance(payload, str) else json.dumps(payload, ensure_ascii=False), status)
+                self._write_json({"ok": False, "error": err}, status=err["httpStatus"] if err["httpStatus"] > 0 else 500)
+                return
+            self._write_json({"ok": True, "data": payload, "source": {"mode": mode, "baseUrl": base_url, "resourceType": ["Practitioner"]}}, status=200)
+            return
+
         self._write_json({"ok": False, "error": {"code": "NOT_FOUND", "message": "Not Found"}}, status=404)
 
     def do_POST(self):
@@ -476,15 +632,39 @@ class ImportUIHandler(BaseHTTPRequestHandler):
             self._handle_create_condition(patient_id)
             return
 
+        m = re.match(r"^/api/patients/([^/]+)/media$", path)
+        if m:
+            patient_id = urllib.parse.unquote(m.group(1))
+            self._handle_create_media(patient_id)
+            return
+
+        m = re.match(r"^/api/patients/([^/]+)/documents$", path)
+        if m:
+            patient_id = urllib.parse.unquote(m.group(1))
+            self._handle_create_document_reference(patient_id)
+            return
+
+        if path == "/api/practitioners":
+            self._handle_create_practitioner()
+            return
+
         self._write_json({"ok": False, "error": {"code": "NOT_FOUND", "message": "Not Found"}}, status=404)
 
     def do_PATCH(self):
-        m = re.match(r"^/api/patients/([^/]+)/intake$", urllib.parse.urlparse(self.path).path)
-        if not m:
-            self._write_json({"ok": False, "error": {"code": "NOT_FOUND", "message": "Not Found"}}, status=404)
+        path = urllib.parse.urlparse(self.path).path
+        m = re.match(r"^/api/patients/([^/]+)/intake$", path)
+        if m:
+            patient_id = urllib.parse.unquote(m.group(1))
+            self._handle_patch_intake(patient_id)
             return
-        patient_id = urllib.parse.unquote(m.group(1))
-        self._handle_patch_intake(patient_id)
+
+        m = re.match(r"^/api/practitioners/([^/]+)$", path)
+        if m:
+            practitioner_id = urllib.parse.unquote(m.group(1))
+            self._handle_patch_practitioner(practitioner_id)
+            return
+
+        self._write_json({"ok": False, "error": {"code": "NOT_FOUND", "message": "Not Found"}}, status=404)
 
     def do_DELETE(self):
         parsed = urllib.parse.urlparse(self.path)
@@ -944,6 +1124,18 @@ class ImportUIHandler(BaseHTTPRequestHandler):
             if note_text:
                 condition_resource["note"] = [{"text": note_text}]
 
+            asserter_practitioner_id = str(payload.get("asserterPractitionerId", "")).strip()
+            if asserter_practitioner_id:
+                status_pr, pr_obj = _fhir_request("GET", f"{base_url}/fhir/Practitioner/{asserter_practitioner_id}")
+                if status_pr >= 400 or status_pr == 0:
+                    err = _parse_fhir_error(
+                        pr_obj if isinstance(pr_obj, str) else json.dumps(pr_obj, ensure_ascii=False),
+                        status_pr,
+                    )
+                    self._write_json({"ok": False, "error": err}, status=err["httpStatus"] if err["httpStatus"] > 0 else 500)
+                    return
+                condition_resource["asserter"] = {"reference": f"Practitioner/{asserter_practitioner_id}"}
+
             status_create, created_obj = _fhir_request("POST", f"{base_url}/fhir/Condition", data=condition_resource)
             if status_create >= 400 or status_create == 0:
                 err = _parse_fhir_error(
@@ -967,6 +1159,229 @@ class ImportUIHandler(BaseHTTPRequestHandler):
                     },
                 },
                 status=201,
+            )
+        except Exception as e:
+            self._write_json({"ok": False, "error": {"code": "INTERNAL_ERROR", "message": str(e)}}, status=500)
+
+    def _handle_create_media(self, patient_id: str):
+        try:
+            body = self._read_json_body()
+            mode = str(body.get("mode", "dev")).strip() or "dev"
+            if mode not in ("dev", "auth"):
+                self._write_json({"ok": False, "error": {"code": "INVALID_MODE", "message": "mode must be dev or auth."}}, status=400)
+                return
+            base_url = self._resolve_base_url(mode, str(body.get("baseUrl", "")).strip())
+            payload = body.get("payload")
+            if not isinstance(payload, dict):
+                self._write_json({"ok": False, "error": {"code": "INVALID_PAYLOAD", "message": "payload (object) is required."}}, status=400)
+                return
+
+            status_patient, patient_obj = _fhir_request("GET", f"{base_url}/fhir/Patient/{patient_id}")
+            if status_patient >= 400 or status_patient == 0:
+                err = _parse_fhir_error(patient_obj if isinstance(patient_obj, str) else json.dumps(patient_obj, ensure_ascii=False), status_patient)
+                self._write_json({"ok": False, "error": err}, status=err["httpStatus"] if err["httpStatus"] > 0 else 500)
+                return
+
+            content_type = str(payload.get("contentType", "")).strip()
+            url = str(payload.get("url", "")).strip()
+            if not content_type or not url:
+                self._write_json({"ok": False, "error": {"code": "VALIDATION_ERROR", "message": "payload.contentType and payload.url are required.", "httpStatus": 400}}, status=400)
+                return
+
+            media = {
+                "resourceType": "Media",
+                "status": str(payload.get("status", "completed")),
+                "subject": {"reference": f"Patient/{patient_id}"},
+                "content": {
+                    "contentType": content_type,
+                    "url": url,
+                },
+            }
+            title = str(payload.get("title", "")).strip()
+            if title:
+                media["content"]["title"] = title
+            creation = str(payload.get("creation", "")).strip()
+            if creation:
+                media["content"]["creation"] = creation
+            note = str(payload.get("note", "")).strip()
+            if note:
+                media["note"] = [{"text": note}]
+            operator_id = str(payload.get("operatorPractitionerId", "")).strip()
+            if operator_id:
+                media["operator"] = {"reference": f"Practitioner/{operator_id}"}
+
+            status_create, created_obj = _fhir_request("POST", f"{base_url}/fhir/Media", data=media)
+            if status_create >= 400 or status_create == 0:
+                err = _parse_fhir_error(created_obj if isinstance(created_obj, str) else json.dumps(created_obj, ensure_ascii=False), status_create)
+                self._write_json({"ok": False, "error": err}, status=err["httpStatus"] if err["httpStatus"] > 0 else 500)
+                return
+
+            self._write_json(
+                {"ok": True, "data": {"patientId": patient_id, "media": created_obj}, "source": {"mode": mode, "baseUrl": base_url, "resourceType": ["Media"]}},
+                status=201,
+            )
+        except Exception as e:
+            self._write_json({"ok": False, "error": {"code": "INTERNAL_ERROR", "message": str(e)}}, status=500)
+
+    def _handle_create_document_reference(self, patient_id: str):
+        try:
+            body = self._read_json_body()
+            mode = str(body.get("mode", "dev")).strip() or "dev"
+            if mode not in ("dev", "auth"):
+                self._write_json({"ok": False, "error": {"code": "INVALID_MODE", "message": "mode must be dev or auth."}}, status=400)
+                return
+            base_url = self._resolve_base_url(mode, str(body.get("baseUrl", "")).strip())
+            payload = body.get("payload")
+            if not isinstance(payload, dict):
+                self._write_json({"ok": False, "error": {"code": "INVALID_PAYLOAD", "message": "payload (object) is required."}}, status=400)
+                return
+
+            status_patient, patient_obj = _fhir_request("GET", f"{base_url}/fhir/Patient/{patient_id}")
+            if status_patient >= 400 or status_patient == 0:
+                err = _parse_fhir_error(patient_obj if isinstance(patient_obj, str) else json.dumps(patient_obj, ensure_ascii=False), status_patient)
+                self._write_json({"ok": False, "error": err}, status=err["httpStatus"] if err["httpStatus"] > 0 else 500)
+                return
+
+            content_type = str(payload.get("contentType", "")).strip()
+            url = str(payload.get("url", "")).strip()
+            if not content_type or not url:
+                self._write_json({"ok": False, "error": {"code": "VALIDATION_ERROR", "message": "payload.contentType and payload.url are required.", "httpStatus": 400}}, status=400)
+                return
+
+            doc = {
+                "resourceType": "DocumentReference",
+                "status": str(payload.get("status", "current")),
+                "subject": {"reference": f"Patient/{patient_id}"},
+                "content": [
+                    {
+                        "attachment": {
+                            "contentType": content_type,
+                            "url": url,
+                        }
+                    }
+                ],
+            }
+            description = str(payload.get("description", "")).strip()
+            if description:
+                doc["description"] = description
+            title = str(payload.get("title", "")).strip()
+            if title:
+                doc["content"][0]["attachment"]["title"] = title
+            date_value = str(payload.get("date", "")).strip()
+            if date_value:
+                doc["date"] = date_value
+
+            status_create, created_obj = _fhir_request("POST", f"{base_url}/fhir/DocumentReference", data=doc)
+            if status_create >= 400 or status_create == 0:
+                err = _parse_fhir_error(created_obj if isinstance(created_obj, str) else json.dumps(created_obj, ensure_ascii=False), status_create)
+                self._write_json({"ok": False, "error": err}, status=err["httpStatus"] if err["httpStatus"] > 0 else 500)
+                return
+
+            self._write_json(
+                {"ok": True, "data": {"patientId": patient_id, "documentReference": created_obj}, "source": {"mode": mode, "baseUrl": base_url, "resourceType": ["DocumentReference"]}},
+                status=201,
+            )
+        except Exception as e:
+            self._write_json({"ok": False, "error": {"code": "INTERNAL_ERROR", "message": str(e)}}, status=500)
+
+    def _handle_create_practitioner(self):
+        try:
+            body = self._read_json_body()
+            mode = str(body.get("mode", "dev")).strip() or "dev"
+            if mode not in ("dev", "auth"):
+                self._write_json({"ok": False, "error": {"code": "INVALID_MODE", "message": "mode must be dev or auth."}}, status=400)
+                return
+            base_url = self._resolve_base_url(mode, str(body.get("baseUrl", "")).strip())
+            payload = body.get("payload")
+            if not isinstance(payload, dict):
+                self._write_json({"ok": False, "error": {"code": "INVALID_PAYLOAD", "message": "payload (object) is required."}}, status=400)
+                return
+
+            family = str(payload.get("family", "")).strip()
+            given = str(payload.get("given", "")).strip()
+            if not family and not given:
+                self._write_json({"ok": False, "error": {"code": "VALIDATION_ERROR", "message": "payload.family or payload.given is required.", "httpStatus": 400}}, status=400)
+                return
+
+            practitioner = {
+                "resourceType": "Practitioner",
+                "active": bool(payload.get("active", True)),
+                "name": [
+                    {
+                        "family": family if family else "Unknown",
+                        "given": [given if given else "Doctor"],
+                    }
+                ],
+            }
+            identifier_system = str(payload.get("identifierSystem", "")).strip()
+            identifier_value = str(payload.get("identifierValue", "")).strip()
+            if identifier_system and identifier_value:
+                practitioner["identifier"] = [{"system": identifier_system, "value": identifier_value}]
+
+            status_create, created_obj = _fhir_request("POST", f"{base_url}/fhir/Practitioner", data=practitioner)
+            if status_create >= 400 or status_create == 0:
+                err = _parse_fhir_error(created_obj if isinstance(created_obj, str) else json.dumps(created_obj, ensure_ascii=False), status_create)
+                self._write_json({"ok": False, "error": err}, status=err["httpStatus"] if err["httpStatus"] > 0 else 500)
+                return
+
+            self._write_json(
+                {"ok": True, "data": {"practitioner": created_obj}, "source": {"mode": mode, "baseUrl": base_url, "resourceType": ["Practitioner"]}},
+                status=201,
+            )
+        except Exception as e:
+            self._write_json({"ok": False, "error": {"code": "INTERNAL_ERROR", "message": str(e)}}, status=500)
+
+    def _handle_patch_practitioner(self, practitioner_id: str):
+        try:
+            body = self._read_json_body()
+            mode = str(body.get("mode", "dev")).strip() or "dev"
+            if mode not in ("dev", "auth"):
+                self._write_json({"ok": False, "error": {"code": "INVALID_MODE", "message": "mode must be dev or auth."}}, status=400)
+                return
+            base_url = self._resolve_base_url(mode, str(body.get("baseUrl", "")).strip())
+            payload = body.get("payload")
+            if not isinstance(payload, dict):
+                self._write_json({"ok": False, "error": {"code": "INVALID_PAYLOAD", "message": "payload (object) is required."}}, status=400)
+                return
+
+            status_get, practitioner = _fhir_request("GET", f"{base_url}/fhir/Practitioner/{practitioner_id}")
+            if status_get >= 400 or status_get == 0:
+                err = _parse_fhir_error(practitioner if isinstance(practitioner, str) else json.dumps(practitioner, ensure_ascii=False), status_get)
+                self._write_json({"ok": False, "error": err}, status=err["httpStatus"] if err["httpStatus"] > 0 else 500)
+                return
+            if not isinstance(practitioner, dict):
+                self._write_json({"ok": False, "error": {"code": "BAD_REQUEST", "message": "Unexpected practitioner payload.", "httpStatus": 400}}, status=400)
+                return
+
+            family = str(payload.get("family", "")).strip()
+            given = str(payload.get("given", "")).strip()
+            active = payload.get("active", None)
+            identifier_system = str(payload.get("identifierSystem", "")).strip()
+            identifier_value = str(payload.get("identifierValue", "")).strip()
+
+            if family or given:
+                if not isinstance(practitioner.get("name"), list) or not practitioner.get("name"):
+                    practitioner["name"] = [{"family": "Unknown", "given": ["Doctor"]}]
+                name0 = practitioner["name"][0]
+                if family:
+                    name0["family"] = family
+                if given:
+                    name0["given"] = [given]
+                practitioner["name"][0] = name0
+            if active is not None:
+                practitioner["active"] = bool(active)
+            if identifier_system and identifier_value:
+                practitioner["identifier"] = [{"system": identifier_system, "value": identifier_value}]
+
+            status_put, updated_obj = _fhir_request("PUT", f"{base_url}/fhir/Practitioner/{practitioner_id}", data=practitioner)
+            if status_put >= 400 or status_put == 0:
+                err = _parse_fhir_error(updated_obj if isinstance(updated_obj, str) else json.dumps(updated_obj, ensure_ascii=False), status_put)
+                self._write_json({"ok": False, "error": err}, status=err["httpStatus"] if err["httpStatus"] > 0 else 500)
+                return
+
+            self._write_json(
+                {"ok": True, "data": {"practitioner": updated_obj}, "source": {"mode": mode, "baseUrl": base_url, "resourceType": ["Practitioner"]}},
+                status=200,
             )
         except Exception as e:
             self._write_json({"ok": False, "error": {"code": "INTERNAL_ERROR", "message": str(e)}}, status=500)

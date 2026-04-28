@@ -1,17 +1,16 @@
-# PHASE2 Frontend Endpoints (Condition MVP)
+# PHASE2 Frontend Endpoints
 
 ## Scope
 
-This document defines the first Phase 2 backend facade endpoints for `Condition`.
-Existing Phase 1 endpoints and response contracts remain unchanged.
+本文件描述 Phase 2 後端 facade 的新增能力，且不破壞既有 Phase 1 契約。
 
-- Facade base URL: `http://127.0.0.1:8092`
-- Backing FHIR (dev): `http://localhost:8091/fhir`
-- Backing FHIR (auth): `http://localhost:8090/fhir`
+- Facade base URL：`http://127.0.0.1:8092`
+- Dev FHIR base URL：`http://localhost:8091/fhir`
+- Auth FHIR base URL：`http://localhost:8090/fhir`
 
-## Response Shape
+## Common Response
 
-Success:
+成功：
 
 ```json
 {
@@ -21,89 +20,79 @@ Success:
 }
 ```
 
-Error:
+失敗：
 
 ```json
 {
   "ok": false,
   "error": {
-    "code": "CONDITION_NOT_FOUND",
-    "message": "Condition was not found.",
-    "httpStatus": 404
+    "code": "VALIDATION_ERROR",
+    "message": "Submitted data is invalid.",
+    "httpStatus": 400
   }
 }
 ```
 
-## 1) POST /api/patients/{id}/conditions
+## Condition（已完成）
 
-Create one `Condition` resource for a patient.
+- `POST /api/patients/{id}/conditions`
+- `GET /api/patients/{id}/conditions`
+- `GET /api/conditions/{id}`
 
-### Request
+建立 payload（最小）：
 
-```http
-POST /api/patients/phase1-patient-001/conditions
-Content-Type: application/json
-```
+- `payload.clinicalStatus` 必填（允許值：`active|recurrence|relapse|inactive|remission|resolved`）
+- `payload.codeText` 或 `payload.code` 至少一個
+- 若有 `payload.code`，則 `payload.code.system`、`payload.code.code` 必填
+- 可選：`payload.asserterPractitionerId`（驗證存在後寫入 `Condition.asserter`）
 
-```json
-{
-  "mode": "dev",
-  "payload": {
-    "codeText": "Hypertension",
-    "code": {
-      "system": "http://snomed.info/sct",
-      "code": "38341003",
-      "display": "Hypertensive disorder, systemic arterial (disorder)"
-    },
-    "clinicalStatus": "active",
-    "verificationStatus": "confirmed",
-    "categoryCode": "problem-list-item",
-    "categoryText": "Problem List Item",
-    "onsetDateTime": "2026-04-28T09:10:00+08:00",
-    "note": "Phase 2 minimum condition sample"
-  }
-}
-```
+## Media（Phase 2 新增）
 
-### Success
+- `POST /api/patients/{id}/media`
+- `GET /api/patients/{id}/media`
 
-- HTTP `201`
-- `data.condition` contains the created FHIR Condition
-- `data.patientId` echoes path patient id
+建立 payload（最小）：
 
-## 2) GET /api/patients/{id}/conditions
+- `payload.contentType` 必填
+- `payload.url` 必填
+- 可選：`title`、`creation`、`note`、`operatorPractitionerId`
 
-List Condition resources for one patient.
+## DocumentReference（Phase 2 新增）
 
-### Request
+- `POST /api/patients/{id}/documents`
+- `GET /api/patients/{id}/documents`
 
-```http
-GET /api/patients/phase1-patient-001/conditions?mode=dev
-```
+建立 payload（最小）：
 
-### Success
+- `payload.contentType` 必填
+- `payload.url` 必填
+- 可選：`description`、`title`、`date`
 
-- HTTP `200`
-- `data.conditions[]`
-- `data.summary.conditionCount`
+## Practitioner（Phase 2 新增）
 
-## 3) GET /api/conditions/{id}
+- `GET /api/practitioners`
+- `POST /api/practitioners`
+- `PATCH /api/practitioners/{id}`
 
-Read one Condition by id.
+查詢支援：
 
-### Request
+- `name`（query，選填）
 
-```http
-GET /api/conditions/{conditionId}?mode=dev
-```
+建立 payload（最小）：
 
-### Success
+- `payload.family` 或 `payload.given` 至少一個
+- 可選：`active`、`identifierSystem`、`identifierValue`
 
-- HTTP `200`
-- `data` is the raw FHIR Condition resource
+更新 payload：
 
-## Notes
+- 支援更新 `family`、`given`、`active`、`identifierSystem`、`identifierValue`
 
-- `mode` supports `dev` and `auth`.
-- Optional `baseUrl` query/body override is supported for local testing.
-- Existing Phase 1 Patient/Observation APIs are not modified by these routes.
+## Compatibility Notes
+
+- 既有 Phase 1 endpoint 不變：
+  - `GET /api/patients/{id}/intake-summary`
+  - `POST /api/patients/intake`
+  - `PATCH /api/patients/{id}/intake`
+  - `DELETE /api/patients/{id}/intake`
+  - `POST /api/process`
+- 新增 endpoint 全部沿用 `ok/data/error` 風格，並支援 `mode` 與 `baseUrl`。
