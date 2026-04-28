@@ -27,7 +27,7 @@ Deliver Phase 2 backend additions in small, non-breaking batches on top of the e
 4. Keep payload minimal and compatible with HAPI R4 Condition core fields.
 5. Add reproducible command set for create/read verification.
 
-### P2 - Media / DocumentReference (next)
+### P2 - Media / DocumentReference
 
 1. Define upload/reference strategy and metadata contract.
 2. Add patient-scoped list/create endpoints.
@@ -44,5 +44,8 @@ Deliver Phase 2 backend additions in small, non-breaking batches on top of the e
 - [x] Phase 2 Condition create/list/read facade API
 - [x] Error mapping extension for Condition not found
 - [x] Endpoint documentation and repro steps
-- [ ] Media / DocumentReference facade flow
-- [ ] Practitioner page workflow
+- [x] Media facade patient list/create API
+- [x] DocumentReference facade patient list/create API
+- [x] Practitioner facade list/create/edit API
+- [x] Condition optional asserter linkage with Practitioner (`asserterPractitionerId`)
+- [x] Phase 2 smoke-test command document

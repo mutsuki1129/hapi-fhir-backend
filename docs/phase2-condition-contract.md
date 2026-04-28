@@ -85,6 +85,7 @@ Base URL（預設）：`http://127.0.0.1:8092`
 - `VALIDATION_ERROR`：Condition payload 不合規
 - `PATIENT_NOT_FOUND`：目標 Patient 不存在
 - `CONDITION_NOT_FOUND`：目標 Condition 不存在
+- `PRACTITIONER_NOT_FOUND`：`asserterPractitionerId` 指向的 Practitioner 不存在
 - `RESOURCE_NOT_FOUND`：其他資源不存在
 - `NETWORK_ERROR` / `TIMEOUT` / `SERVER_ERROR`：上游連線或服務問題
 
