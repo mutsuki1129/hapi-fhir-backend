@@ -1,4 +1,5 @@
 import argparse
+import base64
 import csv
 import json
 import os
@@ -279,6 +280,141 @@ class ImportUIHandler(BaseHTTPRequestHandler):
             return "http://localhost:8090"
         return "http://localhost:8091"
 
+    def _build_smart_configuration(self):
+        issuer = os.getenv("SMART_ISSUER", "http://localhost:8080/realms/fhir")
+        authorization_endpoint = os.getenv("SMART_AUTHORIZATION_ENDPOINT", issuer.rstrip("/") + "/protocol/openid-connect/auth")
+        token_endpoint = os.getenv("SMART_TOKEN_ENDPOINT", issuer.rstrip("/") + "/protocol/openid-connect/token")
+        registration_endpoint = os.getenv("SMART_REGISTRATION_ENDPOINT", "")
+        introspection_endpoint = os.getenv("SMART_INTROSPECTION_ENDPOINT", issuer.rstrip("/") + "/protocol/openid-connect/token/introspect")
+        scopes_csv = os.getenv(
+            "SMART_SCOPES_SUPPORTED",
+            "openid,profile,launch/patient,patient/*.read,patient/*.write,patient/Patient.read,patient/Observation.read",
+        )
+        scopes_supported = [x.strip() for x in scopes_csv.split(",") if x.strip()]
+        capability_csv = os.getenv(
+            "SMART_CAPABILITIES",
+            "sso-openid-connect,launch-ehr-client,client-public,permission-patient,permission-user",
+        )
+        capabilities = [x.strip() for x in capability_csv.split(",") if x.strip()]
+        return {
+            "issuer": issuer,
+            "authorization_endpoint": authorization_endpoint,
+            "token_endpoint": token_endpoint,
+            "registration_endpoint": registration_endpoint or None,
+            "introspection_endpoint": introspection_endpoint,
+            "response_types_supported": ["code"],
+            "grant_types_supported": ["authorization_code", "refresh_token", "client_credentials"],
+            "token_endpoint_auth_methods_supported": ["client_secret_basic", "client_secret_post", "none"],
+            "capabilities": capabilities,
+            "scopes_supported": scopes_supported,
+            "code_challenge_methods_supported": ["S256"],
+        }
+
+    def _is_scope_enforcement_enabled(self) -> bool:
+        return str(os.getenv("SMART_SCOPE_ENFORCEMENT", "1")).strip().lower() not in ("0", "false", "off", "no")
+
+    def _get_bearer_token(self) -> str:
+        auth = str(self.headers.get("Authorization", "") or "").strip()
+        if not auth.lower().startswith("bearer "):
+            return ""
+        token = auth[7:].strip()
+        return token
+
+    def _decode_jwt_payload(self, token: str):
+        parts = token.split(".")
+        if len(parts) < 2:
+            return None
+        payload_b64 = parts[1]
+        pad_len = (4 - (len(payload_b64) % 4)) % 4
+        payload_b64 += "=" * pad_len
+        try:
+            payload_bytes = base64.urlsafe_b64decode(payload_b64.encode("utf-8"))
+            return _safe_json_loads(payload_bytes.decode("utf-8", errors="replace"))
+        except Exception:
+            return None
+
+    def _extract_token_scopes(self, token: str):
+        payload = self._decode_jwt_payload(token)
+        if not isinstance(payload, dict):
+            return None
+        scopes = []
+        scope_raw = payload.get("scope")
+        if isinstance(scope_raw, str):
+            scopes.extend([x.strip() for x in scope_raw.split(" ") if x.strip()])
+        scp_raw = payload.get("scp")
+        if isinstance(scp_raw, list):
+            scopes.extend([str(x).strip() for x in scp_raw if str(x).strip()])
+        elif isinstance(scp_raw, str):
+            scopes.extend([x.strip() for x in scp_raw.split(" ") if x.strip()])
+        return sorted(set(scopes))
+
+    def _extract_request_scopes(self, token: str):
+        allow_header = str(os.getenv("SMART_ALLOW_SCOPE_HEADER", "1")).strip().lower() not in ("0", "false", "off", "no")
+        if allow_header:
+            header_scopes = str(self.headers.get("X-SMART-Scopes", "") or "").strip()
+            if header_scopes:
+                return sorted(set([x.strip() for x in header_scopes.replace(",", " ").split(" ") if x.strip()]))
+        return self._extract_token_scopes(token)
+
+    def _require_scopes_any(self, required_any):
+        if not self._is_scope_enforcement_enabled():
+            return True, "", []
+        token = self._get_bearer_token()
+        if not token:
+            self._write_json(
+                {"ok": False, "error": {"code": "UNAUTHORIZED", "message": "Authentication is required. Please sign in again.", "httpStatus": 401}},
+                status=401,
+            )
+            return False, "", []
+        scopes = self._extract_request_scopes(token)
+        if not isinstance(scopes, list):
+            self._write_json(
+                {"ok": False, "error": {"code": "UNAUTHORIZED", "message": "Bearer token is invalid or unreadable.", "httpStatus": 401}},
+                status=401,
+            )
+            return False, token, []
+        granted = any(scope in scopes for scope in required_any)
+        if not granted:
+            self._write_json(
+                {
+                    "ok": False,
+                    "error": {
+                        "code": "FORBIDDEN",
+                        "message": "You do not have permission to perform this action.",
+                        "httpStatus": 403,
+                        "requiredScopes": required_any,
+                    },
+                },
+                status=403,
+            )
+            return False, token, scopes
+        return True, token, scopes
+
+    def _require_patient_observation_read_scopes(self):
+        allowed, token, scopes = self._require_scopes_any(["patient/*.read", "patient/Patient.read", "patient/Observation.read"])
+        if not allowed:
+            return False, token, scopes
+        # If wildcard scope exists, treat as fully granted.
+        if "patient/*.read" in scopes:
+            return True, token, scopes
+        # Require both Patient.read and Observation.read when wildcard is absent.
+        need = {"patient/Patient.read", "patient/Observation.read"}
+        if not need.issubset(set(scopes)):
+            self._write_json(
+                {
+                    "ok": False,
+                    "error": {
+                        "code": "FORBIDDEN",
+                        "message": "You do not have permission to perform this action.",
+                        "httpStatus": 403,
+                        "requiredScopes": sorted(list(need)),
+                    },
+                },
+                status=403,
+            )
+            return False, token, scopes
+        return True, token, scopes
+
     def _run_ps(self, args):
         proc = subprocess.run(
             args,
@@ -480,6 +616,10 @@ class ImportUIHandler(BaseHTTPRequestHandler):
             self._write_json({"status": "UP", "service": "phase1-backend"}, status=200)
             return
 
+        if self.path == "/.well-known/smart-configuration":
+            self._write_json(self._build_smart_configuration(), status=200)
+            return
+
         parsed = urllib.parse.urlparse(self.path)
         path = parsed.path
         qs = urllib.parse.parse_qs(parsed.query)
@@ -488,8 +628,13 @@ class ImportUIHandler(BaseHTTPRequestHandler):
         if m:
             patient_id = urllib.parse.unquote(m.group(1))
             mode = (qs.get("mode", ["dev"])[0] or "dev").strip()
+            token = ""
+            if mode == "auth":
+                allowed, token, scopes = self._require_patient_observation_read_scopes()
+                if not allowed:
+                    return
             base_url = self._resolve_base_url(mode, (qs.get("baseUrl", [""])[0] or "").strip())
-            status, payload = self._collect_intake_summary(base_url=base_url, patient_id=patient_id)
+            status, payload = self._collect_intake_summary(base_url=base_url, patient_id=patient_id, token=token)
             if status != 200:
                 err = _parse_fhir_error(payload if isinstance(payload, str) else json.dumps(payload, ensure_ascii=False), status)
                 self._write_json({"ok": False, "error": err}, status=err["httpStatus"] if err["httpStatus"] > 0 else 500)
@@ -503,6 +648,7 @@ class ImportUIHandler(BaseHTTPRequestHandler):
                         "mode": mode,
                         "baseUrl": base_url,
                         "resourceType": ["Patient", "Observation", "CareTeam", "Practitioner"],
+                        "smartScopeCheck": "enabled" if mode == "auth" and self._is_scope_enforcement_enabled() else "disabled",
                     },
                 },
                 status=200,
