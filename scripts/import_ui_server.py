@@ -433,6 +433,81 @@ class ImportUIHandler(BaseHTTPRequestHandler):
         logs = (proc.stdout or "") + (("\n" + proc.stderr) if proc.stderr else "")
         return proc.returncode, logs
 
+    def _validate_attachment_payload(self, payload: dict):
+        # Contract: JSON mode uses payload.contentType + payload.url, with optional payload.sizeBytes/payload.contentBase64.
+        allowed_csv = os.getenv(
+            "ATTACHMENT_ALLOWED_CONTENT_TYPES",
+            "image/png,image/jpeg,image/webp,application/pdf,text/plain",
+        )
+        allowed_types = {x.strip().lower() for x in allowed_csv.split(",") if x.strip()}
+        max_bytes = int(str(os.getenv("ATTACHMENT_MAX_BYTES", "10485760")).strip() or "10485760")
+
+        content_type = str(payload.get("contentType", "")).strip().lower()
+        url = str(payload.get("url", "")).strip()
+        if not content_type or not url:
+            return {
+                "ok": False,
+                "status": 400,
+                "error": {"code": "VALIDATION_ERROR", "message": "payload.contentType and payload.url are required.", "httpStatus": 400},
+            }
+
+        if content_type not in allowed_types:
+            return {
+                "ok": False,
+                "status": 415,
+                "error": {
+                    "code": "UNSUPPORTED_MEDIA_TYPE",
+                    "message": "payload.contentType is not allowed.",
+                    "httpStatus": 415,
+                    "allowedContentTypes": sorted(list(allowed_types)),
+                },
+            }
+
+        size_bytes = payload.get("sizeBytes", None)
+        if size_bytes is None and isinstance(payload.get("contentBase64"), str):
+            b64 = str(payload.get("contentBase64")).strip()
+            try:
+                # base64 payload (no data URL header)
+                size_bytes = len(base64.b64decode(b64.encode("utf-8"), validate=False))
+            except Exception:
+                return {
+                    "ok": False,
+                    "status": 400,
+                    "error": {
+                        "code": "VALIDATION_ERROR",
+                        "message": "payload.contentBase64 is invalid base64.",
+                        "httpStatus": 400,
+                    },
+                }
+        if size_bytes is not None:
+            try:
+                size_int = int(size_bytes)
+            except Exception:
+                return {
+                    "ok": False,
+                    "status": 400,
+                    "error": {"code": "VALIDATION_ERROR", "message": "payload.sizeBytes must be an integer.", "httpStatus": 400},
+                }
+            if size_int < 0:
+                return {
+                    "ok": False,
+                    "status": 400,
+                    "error": {"code": "VALIDATION_ERROR", "message": "payload.sizeBytes must be >= 0.", "httpStatus": 400},
+                }
+            if size_int > max_bytes:
+                return {
+                    "ok": False,
+                    "status": 413,
+                    "error": {
+                        "code": "PAYLOAD_TOO_LARGE",
+                        "message": "Attachment exceeds allowed size limit.",
+                        "httpStatus": 413,
+                        "maxBytes": max_bytes,
+                    },
+                }
+
+        return {"ok": True, "contentType": content_type, "url": url}
+
     def _collect_intake_summary(self, base_url: str, patient_id: str, token: str = ""):
         status, patient_obj = _fhir_request("GET", f"{base_url}/fhir/Patient/{patient_id}", token=token)
         if status >= 400 or status == 0:
@@ -1357,11 +1432,12 @@ class ImportUIHandler(BaseHTTPRequestHandler):
                 self._write_json({"ok": False, "error": err}, status=err["httpStatus"] if err["httpStatus"] > 0 else 500)
                 return
 
-            content_type = str(payload.get("contentType", "")).strip()
-            url = str(payload.get("url", "")).strip()
-            if not content_type or not url:
-                self._write_json({"ok": False, "error": {"code": "VALIDATION_ERROR", "message": "payload.contentType and payload.url are required.", "httpStatus": 400}}, status=400)
+            validation = self._validate_attachment_payload(payload)
+            if not validation.get("ok"):
+                self._write_json({"ok": False, "error": validation.get("error")}, status=int(validation.get("status", 400)))
                 return
+            content_type = str(validation.get("contentType"))
+            url = str(validation.get("url"))
 
             media = {
                 "resourceType": "Media",
@@ -1417,11 +1493,12 @@ class ImportUIHandler(BaseHTTPRequestHandler):
                 self._write_json({"ok": False, "error": err}, status=err["httpStatus"] if err["httpStatus"] > 0 else 500)
                 return
 
-            content_type = str(payload.get("contentType", "")).strip()
-            url = str(payload.get("url", "")).strip()
-            if not content_type or not url:
-                self._write_json({"ok": False, "error": {"code": "VALIDATION_ERROR", "message": "payload.contentType and payload.url are required.", "httpStatus": 400}}, status=400)
+            validation = self._validate_attachment_payload(payload)
+            if not validation.get("ok"):
+                self._write_json({"ok": False, "error": validation.get("error")}, status=int(validation.get("status", 400)))
                 return
+            content_type = str(validation.get("contentType"))
+            url = str(validation.get("url"))
 
             doc = {
                 "resourceType": "DocumentReference",
