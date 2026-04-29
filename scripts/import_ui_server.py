@@ -288,7 +288,7 @@ class ImportUIHandler(BaseHTTPRequestHandler):
         introspection_endpoint = os.getenv("SMART_INTROSPECTION_ENDPOINT", issuer.rstrip("/") + "/protocol/openid-connect/token/introspect")
         scopes_csv = os.getenv(
             "SMART_SCOPES_SUPPORTED",
-            "openid,profile,launch/patient,patient/*.read,patient/*.write,patient/Patient.read,patient/Observation.read",
+            "openid,profile,launch/patient,patient/*.read,patient/*.write,patient/Patient.read,patient/Observation.read,patient/Condition.read,patient/DocumentReference.read,user/Practitioner.read,patient/Media.read,patient/Media.write",
         )
         scopes_supported = [x.strip() for x in scopes_csv.split(",") if x.strip()]
         capability_csv = os.getenv(
@@ -421,6 +421,24 @@ class ImportUIHandler(BaseHTTPRequestHandler):
             return False, token, scopes
         return True, token, scopes
 
+    def _require_document_reference_read_scopes(self):
+        allowed, token, scopes = self._require_scopes_any(["patient/*.read", "patient/DocumentReference.read"])
+        if not allowed:
+            return False, token, scopes
+        return True, token, scopes
+
+    def _require_practitioner_read_scopes(self):
+        allowed, token, scopes = self._require_scopes_any(["patient/*.read", "user/*.read", "user/Practitioner.read", "patient/Practitioner.read"])
+        if not allowed:
+            return False, token, scopes
+        return True, token, scopes
+
+    def _require_attachment_write_scopes(self):
+        allowed, token, scopes = self._require_scopes_any(["patient/*.write", "patient/Media.write", "patient/DocumentReference.write"])
+        if not allowed:
+            return False, token, scopes
+        return True, token, scopes
+
     def _run_ps(self, args):
         proc = subprocess.run(
             args,
@@ -507,6 +525,55 @@ class ImportUIHandler(BaseHTTPRequestHandler):
                 }
 
         return {"ok": True, "contentType": content_type, "url": url}
+
+    def _validate_attachment_upload_payload(self, payload: dict):
+        # Upload contract: requires contentType + contentBase64. Optional title/sizeBytes/note.
+        allowed_csv = os.getenv(
+            "ATTACHMENT_ALLOWED_CONTENT_TYPES",
+            "image/png,image/jpeg,image/webp,application/pdf,text/plain",
+        )
+        allowed_types = {x.strip().lower() for x in allowed_csv.split(",") if x.strip()}
+        max_bytes = int(str(os.getenv("ATTACHMENT_MAX_BYTES", "10485760")).strip() or "10485760")
+        content_type = str(payload.get("contentType", "")).strip().lower()
+        content_b64 = str(payload.get("contentBase64", "")).strip()
+        if not content_type or not content_b64:
+            return {
+                "ok": False,
+                "status": 400,
+                "error": {"code": "VALIDATION_ERROR", "message": "payload.contentType and payload.contentBase64 are required.", "httpStatus": 400},
+            }
+        if content_type not in allowed_types:
+            return {
+                "ok": False,
+                "status": 415,
+                "error": {
+                    "code": "UNSUPPORTED_MEDIA_TYPE",
+                    "message": "payload.contentType is not allowed.",
+                    "httpStatus": 415,
+                    "allowedContentTypes": sorted(list(allowed_types)),
+                },
+            }
+        try:
+            decoded = base64.b64decode(content_b64.encode("utf-8"), validate=False)
+        except Exception:
+            return {
+                "ok": False,
+                "status": 400,
+                "error": {"code": "VALIDATION_ERROR", "message": "payload.contentBase64 is invalid base64.", "httpStatus": 400},
+            }
+        actual_size = len(decoded)
+        if actual_size > max_bytes:
+            return {
+                "ok": False,
+                "status": 413,
+                "error": {
+                    "code": "PAYLOAD_TOO_LARGE",
+                    "message": "Attachment exceeds allowed size limit.",
+                    "httpStatus": 413,
+                    "maxBytes": max_bytes,
+                },
+            }
+        return {"ok": True, "contentType": content_type, "contentBase64": content_b64, "sizeBytes": actual_size}
 
     def _collect_intake_summary(self, base_url: str, patient_id: str, token: str = ""):
         status, patient_obj = _fhir_request("GET", f"{base_url}/fhir/Patient/{patient_id}", token=token)
@@ -822,13 +889,29 @@ class ImportUIHandler(BaseHTTPRequestHandler):
             if mode not in ("dev", "auth"):
                 self._write_json({"ok": False, "error": {"code": "INVALID_MODE", "message": "mode must be dev or auth."}}, status=400)
                 return
+            if mode == "auth":
+                allowed, _, _ = self._require_scopes_any(["patient/*.read", "patient/Media.read"])
+                if not allowed:
+                    return
             base_url = self._resolve_base_url(mode, (qs.get("baseUrl", [""])[0] or "").strip())
             status, payload = self._collect_patient_media(base_url=base_url, patient_id=patient_id)
             if status != 200:
                 err = _parse_fhir_error(payload if isinstance(payload, str) else json.dumps(payload, ensure_ascii=False), status)
                 self._write_json({"ok": False, "error": err}, status=err["httpStatus"] if err["httpStatus"] > 0 else 500)
                 return
-            self._write_json({"ok": True, "data": payload, "source": {"mode": mode, "baseUrl": base_url, "resourceType": ["Media"]}}, status=200)
+            self._write_json(
+                {
+                    "ok": True,
+                    "data": payload,
+                    "source": {
+                        "mode": mode,
+                        "baseUrl": base_url,
+                        "resourceType": ["Media"],
+                        "linkage": {"model": "patient-latest", "media": "explicit"},
+                    },
+                },
+                status=200,
+            )
             return
 
         m = re.match(r"^/api/patients/([^/]+)/documents$", path)
@@ -838,13 +921,29 @@ class ImportUIHandler(BaseHTTPRequestHandler):
             if mode not in ("dev", "auth"):
                 self._write_json({"ok": False, "error": {"code": "INVALID_MODE", "message": "mode must be dev or auth."}}, status=400)
                 return
+            if mode == "auth":
+                allowed, _, _ = self._require_document_reference_read_scopes()
+                if not allowed:
+                    return
             base_url = self._resolve_base_url(mode, (qs.get("baseUrl", [""])[0] or "").strip())
             status, payload = self._collect_patient_documents(base_url=base_url, patient_id=patient_id)
             if status != 200:
                 err = _parse_fhir_error(payload if isinstance(payload, str) else json.dumps(payload, ensure_ascii=False), status)
                 self._write_json({"ok": False, "error": err}, status=err["httpStatus"] if err["httpStatus"] > 0 else 500)
                 return
-            self._write_json({"ok": True, "data": payload, "source": {"mode": mode, "baseUrl": base_url, "resourceType": ["DocumentReference"]}}, status=200)
+            self._write_json(
+                {
+                    "ok": True,
+                    "data": payload,
+                    "source": {
+                        "mode": mode,
+                        "baseUrl": base_url,
+                        "resourceType": ["DocumentReference"],
+                        "linkage": {"model": "patient-latest", "documentReference": "explicit"},
+                    },
+                },
+                status=200,
+            )
             return
 
         if path == "/api/practitioners":
@@ -852,6 +951,10 @@ class ImportUIHandler(BaseHTTPRequestHandler):
             if mode not in ("dev", "auth"):
                 self._write_json({"ok": False, "error": {"code": "INVALID_MODE", "message": "mode must be dev or auth."}}, status=400)
                 return
+            if mode == "auth":
+                allowed, _, _ = self._require_practitioner_read_scopes()
+                if not allowed:
+                    return
             base_url = self._resolve_base_url(mode, (qs.get("baseUrl", [""])[0] or "").strip())
             query_name = (qs.get("name", [""])[0] or "").strip()
             status, payload = self._collect_practitioners(base_url=base_url, query_name=query_name)
@@ -886,6 +989,12 @@ class ImportUIHandler(BaseHTTPRequestHandler):
         if m:
             patient_id = urllib.parse.unquote(m.group(1))
             self._handle_create_media(patient_id)
+            return
+
+        m = re.match(r"^/api/patients/([^/]+)/media/upload$", path)
+        if m:
+            patient_id = urllib.parse.unquote(m.group(1))
+            self._handle_upload_media_binary(patient_id)
             return
 
         m = re.match(r"^/api/patients/([^/]+)/documents$", path)
@@ -1420,6 +1529,10 @@ class ImportUIHandler(BaseHTTPRequestHandler):
             if mode not in ("dev", "auth"):
                 self._write_json({"ok": False, "error": {"code": "INVALID_MODE", "message": "mode must be dev or auth."}}, status=400)
                 return
+            if mode == "auth":
+                allowed, _, _ = self._require_attachment_write_scopes()
+                if not allowed:
+                    return
             base_url = self._resolve_base_url(mode, str(body.get("baseUrl", "")).strip())
             payload = body.get("payload")
             if not isinstance(payload, dict):
@@ -1481,6 +1594,10 @@ class ImportUIHandler(BaseHTTPRequestHandler):
             if mode not in ("dev", "auth"):
                 self._write_json({"ok": False, "error": {"code": "INVALID_MODE", "message": "mode must be dev or auth."}}, status=400)
                 return
+            if mode == "auth":
+                allowed, _, _ = self._require_attachment_write_scopes()
+                if not allowed:
+                    return
             base_url = self._resolve_base_url(mode, str(body.get("baseUrl", "")).strip())
             payload = body.get("payload")
             if not isinstance(payload, dict):
@@ -1531,6 +1648,77 @@ class ImportUIHandler(BaseHTTPRequestHandler):
 
             self._write_json(
                 {"ok": True, "data": {"patientId": patient_id, "documentReference": created_obj}, "source": {"mode": mode, "baseUrl": base_url, "resourceType": ["DocumentReference"]}},
+                status=201,
+            )
+        except Exception as e:
+            self._write_json({"ok": False, "error": {"code": "INTERNAL_ERROR", "message": str(e)}}, status=500)
+
+    def _handle_upload_media_binary(self, patient_id: str):
+        try:
+            body = self._read_json_body()
+            mode = str(body.get("mode", "dev")).strip() or "dev"
+            if mode not in ("dev", "auth"):
+                self._write_json({"ok": False, "error": {"code": "INVALID_MODE", "message": "mode must be dev or auth."}}, status=400)
+                return
+            if mode == "auth":
+                allowed, _, _ = self._require_attachment_write_scopes()
+                if not allowed:
+                    return
+            base_url = self._resolve_base_url(mode, str(body.get("baseUrl", "")).strip())
+            payload = body.get("payload")
+            if not isinstance(payload, dict):
+                self._write_json({"ok": False, "error": {"code": "INVALID_PAYLOAD", "message": "payload (object) is required."}}, status=400)
+                return
+
+            validation = self._validate_attachment_upload_payload(payload)
+            if not validation.get("ok"):
+                self._write_json({"ok": False, "error": validation.get("error")}, status=int(validation.get("status", 400)))
+                return
+
+            status_patient, patient_obj = _fhir_request("GET", f"{base_url}/fhir/Patient/{patient_id}")
+            if status_patient >= 400 or status_patient == 0:
+                err = _parse_fhir_error(patient_obj if isinstance(patient_obj, str) else json.dumps(patient_obj, ensure_ascii=False), status_patient)
+                self._write_json({"ok": False, "error": err}, status=err["httpStatus"] if err["httpStatus"] > 0 else 500)
+                return
+
+            media = {
+                "resourceType": "Media",
+                "status": str(payload.get("status", "completed")),
+                "subject": {"reference": f"Patient/{patient_id}"},
+                "content": {
+                    "contentType": str(validation.get("contentType")),
+                    "data": str(validation.get("contentBase64")),
+                },
+            }
+            title = str(payload.get("title", "")).strip()
+            if title:
+                media["content"]["title"] = title
+            note = str(payload.get("note", "")).strip()
+            if note:
+                media["note"] = [{"text": note}]
+            operator_id = str(payload.get("operatorPractitionerId", "")).strip()
+            if operator_id:
+                media["operator"] = {"reference": f"Practitioner/{operator_id}"}
+
+            status_create, created_obj = _fhir_request("POST", f"{base_url}/fhir/Media", data=media)
+            if status_create >= 400 or status_create == 0:
+                err = _parse_fhir_error(created_obj if isinstance(created_obj, str) else json.dumps(created_obj, ensure_ascii=False), status_create)
+                self._write_json({"ok": False, "error": err}, status=err["httpStatus"] if err["httpStatus"] > 0 else 500)
+                return
+
+            self._write_json(
+                {
+                    "ok": True,
+                    "data": {
+                        "patientId": patient_id,
+                        "media": created_obj,
+                        "upload": {
+                            "mode": "base64-inline",
+                            "sizeBytes": int(validation.get("sizeBytes", 0)),
+                        },
+                    },
+                    "source": {"mode": mode, "baseUrl": base_url, "resourceType": ["Media"]},
+                },
                 status=201,
             )
         except Exception as e:
