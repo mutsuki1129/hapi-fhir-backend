@@ -1,6 +1,7 @@
 import argparse
 import base64
 import csv
+import datetime
 import json
 import os
 import re
@@ -239,6 +240,132 @@ def _fhir_request(method: str, url: str, data=None, token: str = "", timeout_sec
         return 0, f"Network error while calling FHIR server: {e.reason}"
     except Exception as e:
         return 0, str(e)
+
+
+def _safe_int(value):
+    try:
+        return int(value)
+    except Exception:
+        return None
+
+
+def _derive_age_from_birth_date(birth_date: str):
+    if not isinstance(birth_date, str) or not birth_date.strip():
+        return None
+    try:
+        birth = datetime.date.fromisoformat(birth_date.strip())
+        today = datetime.date.today()
+        age = today.year - birth.year - ((today.month, today.day) < (birth.month, birth.day))
+        return age if age >= 0 else None
+    except Exception:
+        return None
+
+
+def _extract_patient_identifiers(patient_obj: dict):
+    out = {
+        "nationalId": None,
+        "nhiCardNo": None,
+    }
+    if not isinstance(patient_obj, dict):
+        return out
+    for ident in patient_obj.get("identifier", []) or []:
+        if not isinstance(ident, dict):
+            continue
+        system = str(ident.get("system", "") or "").strip().lower()
+        value = str(ident.get("value", "") or "").strip()
+        if not value:
+            continue
+        if system == "urn:tw:national-id":
+            out["nationalId"] = value
+        elif system == "urn:tw:nhi-card":
+            out["nhiCardNo"] = value
+    return out
+
+
+def _map_observations_for_data_model(observations: list):
+    # Consistent mapping for DATA_MODEL social/psychological/biomarker fields.
+    mapped = {
+        "educationLevel": None,
+        "occupation": None,
+        "monthlyIncome": None,
+        "monthlyExpense": None,
+        "hobby": None,
+        "psychologicalTraits": None,
+        "behaviorPattern": None,
+        "biomarker": None,
+    }
+    biomarker = None
+
+    for obs in observations or []:
+        if not isinstance(obs, dict):
+            continue
+        code_obj = obs.get("code", {}) if isinstance(obs.get("code"), dict) else {}
+        code_text = str(code_obj.get("text", "") or "").strip().lower()
+        coding = code_obj.get("coding", []) or []
+        codes = set()
+        displays = set()
+        for c in coding:
+            if isinstance(c, dict):
+                code_val = str(c.get("code", "") or "").strip().lower()
+                display_val = str(c.get("display", "") or "").strip()
+                if code_val:
+                    codes.add(code_val)
+                if display_val:
+                    displays.add(display_val)
+
+        def has_any(*vals):
+            target = {v.lower() for v in vals}
+            return any(v in codes for v in target) or any(v in code_text for v in target)
+
+        if has_any("education-level"):
+            vcc = obs.get("valueCodeableConcept", {}) if isinstance(obs.get("valueCodeableConcept"), dict) else {}
+            mapped["educationLevel"] = vcc.get("text") or mapped["educationLevel"]
+        elif has_any("occupation"):
+            mapped["occupation"] = obs.get("valueString") or mapped["occupation"]
+        elif has_any("financial-status"):
+            for comp in obs.get("component", []) or []:
+                if not isinstance(comp, dict):
+                    continue
+                comp_code = comp.get("code", {}) if isinstance(comp.get("code"), dict) else {}
+                comp_codes = set()
+                for cc in comp_code.get("coding", []) or []:
+                    if isinstance(cc, dict):
+                        code_val = str(cc.get("code", "") or "").strip().lower()
+                        if code_val:
+                            comp_codes.add(code_val)
+                vq = comp.get("valueQuantity", {}) if isinstance(comp.get("valueQuantity"), dict) else {}
+                val = vq.get("value")
+                if "monthly-income" in comp_codes:
+                    mapped["monthlyIncome"] = _safe_int(val) if _safe_int(val) is not None else val
+                if "monthly-expense" in comp_codes:
+                    mapped["monthlyExpense"] = _safe_int(val) if _safe_int(val) is not None else val
+        elif has_any("hobby-interest"):
+            mapped["hobby"] = obs.get("valueString") or mapped["hobby"]
+        elif has_any("psychological-traits"):
+            mapped["psychologicalTraits"] = obs.get("valueString") or mapped["psychologicalTraits"]
+        elif has_any("behavior-pattern"):
+            mapped["behaviorPattern"] = obs.get("valueString") or mapped["behaviorPattern"]
+        else:
+            # Treat observations with valueQuantity and non-social-history code as biomarker candidate.
+            vq = obs.get("valueQuantity", {}) if isinstance(obs.get("valueQuantity"), dict) else None
+            if vq and isinstance(vq, dict):
+                code = None
+                display = None
+                system = None
+                if coding:
+                    first = coding[0] if isinstance(coding[0], dict) else {}
+                    code = first.get("code")
+                    display = first.get("display")
+                    system = first.get("system")
+                biomarker = {
+                    "code": code,
+                    "display": display or code_obj.get("text"),
+                    "system": system,
+                    "value": vq.get("value"),
+                    "unit": vq.get("unit"),
+                }
+    mapped["biomarker"] = biomarker
+    return mapped
 
 
 class ImportUIHandler(BaseHTTPRequestHandler):
@@ -788,10 +915,43 @@ class ImportUIHandler(BaseHTTPRequestHandler):
                 self._write_json({"ok": False, "error": err}, status=err["httpStatus"] if err["httpStatus"] > 0 else 500)
                 return
 
+            patient_obj = payload.get("patient", {}) if isinstance(payload, dict) else {}
+            observations = payload.get("observations", []) if isinstance(payload, dict) else []
+            practitioners = payload.get("practitioners", []) if isinstance(payload, dict) else []
+            identifiers = _extract_patient_identifiers(patient_obj)
+            age = _derive_age_from_birth_date(str(patient_obj.get("birthDate", "") or ""))
+            observation_model = _map_observations_for_data_model(observations)
+            doctor = None
+            if practitioners and isinstance(practitioners[0], dict):
+                p0 = practitioners[0]
+                pname = None
+                names = p0.get("name", []) if isinstance(p0.get("name"), list) else []
+                if names and isinstance(names[0], dict):
+                    family = str(names[0].get("family", "") or "").strip()
+                    given = names[0].get("given", []) or []
+                    given_text = ""
+                    if isinstance(given, list):
+                        given_text = " ".join([str(x).strip() for x in given if str(x).strip()])
+                    pname = (family + " " + given_text).strip() or None
+                doctor = {
+                    "practitionerId": p0.get("id"),
+                    "name": pname,
+                }
+
             self._write_json(
                 {
                     "ok": True,
                     "data": payload,
+                    "modelAlignment": {
+                        "patient": {
+                            "birthDate": patient_obj.get("birthDate"),
+                            "age": age,
+                            "gender": patient_obj.get("gender"),
+                            "identifiers": identifiers,
+                        },
+                        "observation": observation_model,
+                        "doctor": doctor,
+                    },
                     "source": {
                         "mode": mode,
                         "baseUrl": base_url,
