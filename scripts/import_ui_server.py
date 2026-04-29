@@ -415,6 +415,12 @@ class ImportUIHandler(BaseHTTPRequestHandler):
             return False, token, scopes
         return True, token, scopes
 
+    def _require_condition_read_scopes(self):
+        allowed, token, scopes = self._require_scopes_any(["patient/*.read", "patient/Condition.read"])
+        if not allowed:
+            return False, token, scopes
+        return True, token, scopes
+
     def _run_ps(self, args):
         proc = subprocess.run(
             args,
@@ -649,6 +655,13 @@ class ImportUIHandler(BaseHTTPRequestHandler):
                         "baseUrl": base_url,
                         "resourceType": ["Patient", "Observation", "CareTeam", "Practitioner"],
                         "smartScopeCheck": "enabled" if mode == "auth" and self._is_scope_enforcement_enabled() else "disabled",
+                        "linkage": {
+                            "model": "patient-latest",
+                            "patient": "explicit",
+                            "observation": "explicit",
+                            "careTeam": "explicit_or_fallback",
+                            "practitioner": "explicit_or_fallback",
+                        },
                     },
                 },
                 status=200,
@@ -662,6 +675,10 @@ class ImportUIHandler(BaseHTTPRequestHandler):
             if mode not in ("dev", "auth"):
                 self._write_json({"ok": False, "error": {"code": "INVALID_MODE", "message": "mode must be dev or auth."}}, status=400)
                 return
+            if mode == "auth":
+                allowed, _, _ = self._require_condition_read_scopes()
+                if not allowed:
+                    return
             base_url = self._resolve_base_url(mode, (qs.get("baseUrl", [""])[0] or "").strip())
             status, payload = self._collect_patient_conditions(base_url=base_url, patient_id=patient_id)
             if status != 200:
@@ -677,6 +694,10 @@ class ImportUIHandler(BaseHTTPRequestHandler):
                         "mode": mode,
                         "baseUrl": base_url,
                         "resourceType": ["Condition"],
+                        "linkage": {
+                            "model": "patient-latest",
+                            "condition": "explicit",
+                        },
                     },
                 },
                 status=200,
@@ -690,6 +711,10 @@ class ImportUIHandler(BaseHTTPRequestHandler):
             if mode not in ("dev", "auth"):
                 self._write_json({"ok": False, "error": {"code": "INVALID_MODE", "message": "mode must be dev or auth."}}, status=400)
                 return
+            if mode == "auth":
+                allowed, _, _ = self._require_condition_read_scopes()
+                if not allowed:
+                    return
             base_url = self._resolve_base_url(mode, (qs.get("baseUrl", [""])[0] or "").strip())
             status, payload = _fhir_request("GET", f"{base_url}/fhir/Condition/{condition_id}")
             if status >= 400 or status == 0:
@@ -705,6 +730,10 @@ class ImportUIHandler(BaseHTTPRequestHandler):
                         "mode": mode,
                         "baseUrl": base_url,
                         "resourceType": ["Condition"],
+                        "linkage": {
+                            "model": "direct-by-id",
+                            "condition": "explicit",
+                        },
                     },
                 },
                 status=200,
